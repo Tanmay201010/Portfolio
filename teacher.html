@@ -93,6 +93,19 @@
           </div>
         </div>
 
+        <!-- Password (ID Number) Edit Section -->
+        <div class="password-edit-section">
+          <label>Student Login Password (ID Number)</label>
+          <div class="password-edit-row">
+            <input type="text" id="edit-password-input" placeholder="Enter new password / ID number...">
+            <button class="obs-btn obs-btn-save" onclick="saveStudentPassword()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              Update Password
+            </button>
+          </div>
+          <div id="password-edit-status" class="status-msg" style="display:none; font-size:0.78rem; padding: 0.35rem 0.6rem; margin-top:0;"></div>
+        </div>
+
         <!-- Past Observations List -->
         <div>
           <label style="margin-bottom: 0.5rem; display: block;">Observation History</label>
@@ -114,6 +127,7 @@
           <span id="save-status" class="status-msg" style="display: none; margin-top: 0; padding: 0.5rem 1rem;"></span>
         </div>
       </div>
+
 
       <!-- No Selection State -->
       <div id="no-selection-panel" class="no-selection">
