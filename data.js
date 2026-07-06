@@ -24,7 +24,7 @@ window.students = [
       },
       {
         "date": "7/6/2026, 10:51:23 PM",
-        "text": "ASD"
+        "text": "ASDxzc"
       }
     ]
   },
