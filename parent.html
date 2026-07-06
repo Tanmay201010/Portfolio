@@ -11,6 +11,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
   <!-- Load student data from data.js -->
   <script src="data.js"></script>
+  <!-- Load unified application controller -->
+  <script src="app.js" defer></script>
 </head>
 <body>
 
@@ -63,95 +65,5 @@
       </div>
     </div>
   </div>
-
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const isAuth = sessionStorage.getItem("parent_auth") === "true";
-      const studentId = sessionStorage.getItem("parent_child_id");
-
-      if (isAuth && studentId) {
-        showDashboard(parseInt(studentId));
-      } else {
-        document.getElementById("login-container").style.display = "block";
-      }
-
-      // Handle Parent Login Form Submit
-      document.getElementById("parent-login-form").addEventListener("submit", (e) => {
-        e.preventDefault();
-        const username = document.getElementById("parent-username").value.trim().toLowerCase();
-        const password = document.getElementById("parent-password").value.trim();
-
-        // AUTHENTICATION RULE: first_name (case-insensitive) and id_number matches
-        const student = window.students.find(s => 
-          s.first_name.toLowerCase() === username && 
-          s.id_number.toLowerCase() === password.toLowerCase()
-        );
-
-        if (student) {
-          sessionStorage.setItem("parent_auth", "true");
-          sessionStorage.setItem("parent_child_id", student.id);
-          showDashboard(student.id);
-        } else {
-          const err = document.getElementById("login-error");
-          err.style.display = "flex";
-          setTimeout(() => err.style.display = "none", 4000);
-        }
-      });
-    });
-
-    function showDashboard(studentId) {
-      const student = window.students.find(s => s.id === studentId);
-      if (!student) {
-        logout();
-        return;
-      }
-
-      // Hide login and show dashboard container
-      document.getElementById("login-container").style.display = "none";
-      document.getElementById("dashboard-container").style.display = "block";
-
-      // Render only the child's information
-      document.getElementById("child-name").textContent = student.first_name;
-      document.getElementById("child-id").textContent = student.id_number;
-      
-      const notesEl = document.getElementById("notes-content");
-      notesEl.innerHTML = "";
-
-      // Support legacy 'notes' string structure or new 'observations' array
-      let observations = student.observations || [];
-      if (observations.length === 0 && student.notes && student.notes.trim() !== "") {
-        observations = [{ date: "LEGACY NOTE", text: student.notes }];
-      }
-
-      if (observations.length === 0) {
-        notesEl.innerHTML = `<div class="notes-display-box" style="display: flex; align-items: center; justify-content: center;"><em style="color: var(--text-muted);">No observations have been recorded for your child yet.</em></div>`;
-      } else {
-        const historyDiv = document.createElement("div");
-        historyDiv.className = "observations-history";
-        historyDiv.style.maxHeight = "400px";
-
-        observations.forEach(obs => {
-          const card = document.createElement("div");
-          card.className = "observation-card";
-          card.innerHTML = `
-            <div class="observation-date">${obs.date}</div>
-            <div class="observation-text">${obs.text}</div>
-          `;
-          historyDiv.appendChild(card);
-        });
-
-        notesEl.appendChild(historyDiv);
-        
-        // Scroll to the latest observation
-        historyDiv.scrollTop = historyDiv.scrollHeight;
-      }
-    }
-
-    function logout() {
-      sessionStorage.removeItem("parent_auth");
-      sessionStorage.removeItem("parent_child_id");
-      window.location.reload();
-    }
-  </script>
 </body>
 </html>
