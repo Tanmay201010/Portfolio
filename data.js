@@ -42,7 +42,7 @@ window.students = [
   {
     "id": 3,
     "first_name": "Charlie",
-    "id_number": "STU-003",
+    "id_number": "P1120765",
     "observations": [
       {
         "date": "2026-07-06 15:45",
