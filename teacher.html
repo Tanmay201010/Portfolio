@@ -423,12 +423,16 @@
           }
         });
 
-        if (!getResponse.ok) {
+        let sha = null;
+        if (getResponse.ok) {
+          const fileData = await getResponse.json();
+          sha = fileData.sha;
+        } else if (getResponse.status === 404) {
+          // File does not exist in repo yet; we will create it (no SHA required)
+          sha = null;
+        } else {
           throw new Error(`Failed to fetch file metadata. Status: ${getResponse.status}`);
         }
-
-        const fileData = await getResponse.json();
-        const sha = fileData.sha;
 
         // Step 2: Build the complete string content of the updated data.js file
         const fileContent = `// Student Management System - Data Store
@@ -449,9 +453,11 @@ window.students = ${JSON.stringify(localStudents, null, 2)};
         const putBody = {
           message: `Update student database (Aetheris CMS)`,
           content: base64Content,
-          sha: sha,
           branch: config.branch
         };
+        if (sha) {
+          putBody.sha = sha;
+        }
 
         const putResponse = await fetch(url, {
           method: "PUT",
