@@ -20,7 +20,7 @@ window.students = [
     "observations": [
       {
         "date": "2026-07-06 14:30",
-        "text": "Alice is doing exceptionally well in class activities and shows great proardsess."
+        "text": "Tanmay is doing exceptionally well in class activities and shows great interest ."
       },
       {
         "date": "7/6/2026, 10:54:00 PM",
