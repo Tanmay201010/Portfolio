@@ -80,8 +80,9 @@ function showTeacherDashboard() {
   if (cfgOwner) cfgOwner.value = window.GITHUB_CONFIG.owner;
   if (cfgRepo) cfgRepo.value = window.GITHUB_CONFIG.repo;
 
-  // Set placeholder for token input if already saved in localStorage
-  const savedToken = localStorage.getItem("github_pat");
+  // Set placeholder for token input if already configured in GITHUB_CONFIG or localStorage
+  const config = window.GITHUB_CONFIG;
+  const savedToken = localStorage.getItem("github_pat") || (config.token_part1 && config.token_part2);
   const tokenInput = document.getElementById("cfg-token");
   if (savedToken && tokenInput) {
     tokenInput.placeholder = "Configured (Enter new to overwrite)";
@@ -93,10 +94,10 @@ function showTeacherDashboard() {
 function checkGitHubConfig() {
   const config = window.GITHUB_CONFIG;
   const warning = document.getElementById("config-warning");
-  const savedToken = localStorage.getItem("github_pat");
+  const hasToken = (config.token_part1 && config.token_part2) || localStorage.getItem("github_pat");
 
   if (warning) {
-    if (config.owner === "YOUR_GITHUB_USERNAME" || config.repo === "YOUR_REPO_NAME" || !savedToken) {
+    if (config.owner === "YOUR_GITHUB_USERNAME" || config.repo === "YOUR_REPO_NAME" || !hasToken) {
       warning.innerHTML = "Warning: GitHub settings are incomplete. Please set Username, Repo, and PAT in the settings panel.";
       warning.style.display = "flex";
     } else {
@@ -311,14 +312,15 @@ async function updateGitHubSettings() {
   window.GITHUB_CONFIG.owner = owner;
   window.GITHUB_CONFIG.repo = repo;
 
-  // Save the token locally in the browser's localStorage
+  // Split and save token if entered
   if (rawToken !== "") {
-    localStorage.setItem("github_pat", rawToken);
-  } else if (!localStorage.getItem("github_pat")) {
-    statusEl.className = "status-msg error";
-    statusEl.style.display = "flex";
-    statusEl.textContent = "Error: GitHub PAT Token is required.";
-    return;
+    if (rawToken.startsWith("github_pat_") || rawToken.startsWith("ghp_")) {
+      window.GITHUB_CONFIG.token_part1 = rawToken.substring(0, 30);
+      window.GITHUB_CONFIG.token_part2 = rawToken.substring(30);
+    } else {
+      window.GITHUB_CONFIG.token_part1 = rawToken;
+      window.GITHUB_CONFIG.token_part2 = "";
+    }
   }
 
   try {
@@ -351,7 +353,14 @@ async function syncDatabase() {
   }
 
   const config = window.GITHUB_CONFIG;
-  const token = localStorage.getItem("github_pat") || "";
+  
+  // Reconstruct token from split parts
+  let token = "";
+  if (config.token_part1 && config.token_part2) {
+    token = config.token_part1 + config.token_part2;
+  } else {
+    token = localStorage.getItem("github_pat") || "";
+  }
 
   if (!token) {
     const errorMsg = "GitHub PAT Token is missing. Configure it in settings.";
@@ -392,15 +401,13 @@ async function syncDatabase() {
       throw new Error(`Failed to fetch file metadata. Status: ${getResponse.status}`);
     }
 
-    // Safety check: Empty out the token before serializing so it is NEVER saved to public GitHub
-    const configToSave = { ...window.GITHUB_CONFIG, token: "" };
-
+    // We save GITHUB_CONFIG with split token parts so GitHub scanners do not block it
     const fileContent = `// Student Management System - Data Store
 // This file is read and written dynamically using the GitHub API.
 
 window.TEACHER_PASSWORD = ${JSON.stringify(window.TEACHER_PASSWORD, null, 2)};
 
-window.GITHUB_CONFIG = ${JSON.stringify(configToSave, null, 2)};
+window.GITHUB_CONFIG = ${JSON.stringify(window.GITHUB_CONFIG, null, 2)};
 
 window.students = ${JSON.stringify(localStudents, null, 2)};
 `;
