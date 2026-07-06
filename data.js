@@ -35,7 +35,7 @@ window.students = [
     "observations": [
       {
         "date": "2026-07-06 15:10",
-        "text": "Bob is highly creative but needs to focus more during math classes."
+        "text": "Saalim is highly creative but needs to focus more during math classes."
       }
     ]
   },
