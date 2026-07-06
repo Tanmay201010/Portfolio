@@ -42,14 +42,37 @@
 
   <!-- 3. MAIN DASHBOARD CONTENT (Hidden by default) -->
   <main id="dashboard-container" class="dashboard-container" style="display: none;">
-    <!-- Sidebar: Student List -->
+    <!-- Sidebar: Student List & Sync Settings -->
     <aside class="sidebar">
       <div class="sidebar-header">
         <h2 class="sidebar-title">Students</h2>
       </div>
-      <ul id="student-list" class="student-list">
+      <ul id="student-list" class="student-list" style="max-height: 280px;">
         <!-- Rendered via JS -->
       </ul>
+
+      <!-- GitHub Settings Panel -->
+      <div style="border-top: 1px solid var(--glass-border); padding-top: 1.2rem; margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+        <h3 style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">GitHub Config Settings</h3>
+        
+        <div class="form-group" style="margin-bottom: 0.5rem; gap: 0.2rem;">
+          <label style="font-size: 0.7rem;">Username</label>
+          <input type="text" id="cfg-owner" style="padding: 0.4rem 0.6rem; font-size: 0.85rem; border-radius: 8px;">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0.5rem; gap: 0.2rem;">
+          <label style="font-size: 0.7rem;">Repo Name</label>
+          <input type="text" id="cfg-repo" style="padding: 0.4rem 0.6rem; font-size: 0.85rem; border-radius: 8px;">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0.8rem; gap: 0.2rem;">
+          <label style="font-size: 0.7rem;">GitHub PAT Token</label>
+          <input type="password" id="cfg-token" placeholder="github_pat_..." style="padding: 0.4rem 0.6rem; font-size: 0.85rem; border-radius: 8px;">
+        </div>
+        
+        <button class="btn btn-secondary" onclick="updateGitHubSettings()" style="padding: 0.5rem 1rem; font-size: 0.8rem; border-radius: 8px; font-weight: 600;">Update & Sync Config</button>
+        <div id="cfg-status" class="status-msg" style="display: none; font-size: 0.75rem; margin-top: 0.5rem; padding: 0.4rem 0.6rem;"></div>
+      </div>
     </aside>
 
     <!-- Main Panel: Profile view & Notes editor -->
@@ -184,6 +207,10 @@
       localStudents = [...window.students];
       renderStudentList();
       
+      // Load current GitHub config to config form fields
+      document.getElementById("cfg-owner").value = window.GITHUB_CONFIG.owner;
+      document.getElementById("cfg-repo").value = window.GITHUB_CONFIG.repo;
+
       // Check GitHub config placeholders
       checkGitHubConfig();
     }
@@ -396,6 +423,60 @@
       }
     }
 
+    // Update settings in-memory and write data.js to GitHub
+    async function updateGitHubSettings() {
+      const owner = document.getElementById("cfg-owner").value.trim();
+      const repo = document.getElementById("cfg-repo").value.trim();
+      const rawToken = document.getElementById("cfg-token").value.trim();
+
+      const statusEl = document.getElementById("cfg-status");
+      statusEl.className = "status-msg info";
+      statusEl.style.display = "flex";
+      statusEl.textContent = "Updating config & syncing file...";
+
+      if (!owner || !repo) {
+        statusEl.className = "status-msg error";
+        statusEl.style.display = "flex";
+        statusEl.textContent = "Error: Username and Repo Name are required.";
+        return;
+      }
+
+      // Update config object locally
+      window.GITHUB_CONFIG.owner = owner;
+      window.GITHUB_CONFIG.repo = repo;
+
+      if (rawToken !== "") {
+        // Encode the raw github token to base64 at client-side dynamically
+        if (rawToken.startsWith("github_pat_") || rawToken.startsWith("ghp_")) {
+          window.GITHUB_CONFIG.token = btoa(rawToken);
+        } else {
+          window.GITHUB_CONFIG.token = rawToken; // assume already base64
+        }
+      }
+
+      try {
+        // Sync database configuration change to GitHub Pages repo
+        await syncDatabase();
+        
+        // Success
+        statusEl.className = "status-msg success";
+        statusEl.style.display = "flex";
+        statusEl.textContent = "Success: Config saved and synced!";
+        document.getElementById("cfg-token").value = ""; // clear input
+        
+        // Hide warning if configurations are populated
+        checkGitHubConfig();
+
+        setTimeout(() => {
+          statusEl.style.display = "none";
+        }, 4000);
+      } catch (error) {
+        statusEl.className = "status-msg error";
+        statusEl.style.display = "flex";
+        statusEl.textContent = `Error: ${error.message}`;
+      }
+    }
+
     // Save changes and update data.js on GitHub
     async function syncDatabase() {
       const statusEl = document.getElementById("save-status");
@@ -410,11 +491,18 @@
         statusEl.className = "status-msg error";
         statusEl.style.display = "flex";
         statusEl.textContent = "Error: Config placeholders detected in data.js. Configure GitHub info to save.";
-        return;
+        throw new Error("Missing config credentials.");
       }
 
       const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`;
-      const token = atob(config.token);
+      
+      // Decrypt token from base64 back to raw for authorization
+      let token = "";
+      try {
+        token = atob(config.token);
+      } catch(e) {
+        token = config.token; // fallback if already plaintext
+      }
 
       try {
         // Step 1: Get the current file metadata (specifically the SHA)
@@ -489,6 +577,7 @@ window.students = ${JSON.stringify(localStudents, null, 2)};
         statusEl.className = "status-msg error";
         statusEl.style.display = "flex";
         statusEl.textContent = `Error: ${error.message}`;
+        throw error;
       }
     }
   </script>
