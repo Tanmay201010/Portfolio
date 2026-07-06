@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Portal - Aetheris</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Load Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- Load student data & config from data.js -->
+  <script src="data.js"></script>
+</head>
+<body>
+
+  <!-- 1. LOGIN SCREEN -->
+  <div id="login-container" class="glass-card">
+    <h1>Teacher Login</h1>
+    <p class="subtitle">Please enter your teacher security password.</p>
+    <form id="login-form">
+      <div class="form-group">
+        <label for="password">Security Password</label>
+        <input type="password" id="password" required placeholder="••••••••">
+      </div>
+      <button type="submit" class="btn btn-primary" id="btn-login-submit">Login</button>
+      <div id="login-error" class="status-msg error">❌ Invalid Password</div>
+    </form>
+    <div style="margin-top: 1.5rem; text-align: center;">
+      <a href="index.html" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">← Back to Selector</a>
+    </div>
+  </div>
+
+  <!-- 2. DASHBOARD NAV HEADER (Hidden by default) -->
+  <header id="nav-header" class="nav-header" style="display: none;">
+    <div class="nav-brand">AETHERIS // TEACHER</div>
+    <div class="nav-user">
+      <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem;" onclick="showAddStudentModal()">+ Add Student</button>
+      <button class="btn-logout" id="btn-logout" onclick="logout()">Logout</button>
+    </div>
+  </header>
+
+  <!-- 3. MAIN DASHBOARD CONTENT (Hidden by default) -->
+  <main id="dashboard-container" class="dashboard-container" style="display: none;">
+    <!-- Sidebar: Student List -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2 class="sidebar-title">Students</h2>
+      </div>
+      <ul id="student-list" class="student-list">
+        <!-- Rendered via JS -->
+      </ul>
+    </aside>
+
+    <!-- Main Panel: Profile view & Notes editor -->
+    <section class="main-panel">
+      <!-- Search Input -->
+      <div class="search-wrapper">
+        <input type="text" id="search-bar" placeholder="Search student by name..." autocomplete="off">
+      </div>
+
+      <!-- Detail Panel -->
+      <div id="student-detail-panel" style="display: none;" class="profile-view">
+        <div class="profile-header">
+          <div>
+            <h2 id="student-name" class="profile-title">Student Name</h2>
+            <div id="student-id" class="profile-id">ID Number</div>
+          </div>
+        </div>
+
+        <div class="form-group" style="flex: 1;">
+          <label for="student-notes">Observation & Performance Notes</label>
+          <textarea id="student-notes" placeholder="Write thoughts, feedback, or observations about this student..."></textarea>
+        </div>
+
+        <div style="display: flex; gap: 1rem; align-items: center;">
+          <button id="btn-save-notes" class="btn btn-primary" onclick="saveNotes()" style="max-width: 200px;">
+            Save Observations
+          </button>
+          <span id="save-status" class="status-msg" style="margin-top: 0; padding: 0.5rem 1rem;"></span>
+        </div>
+      </div>
+
+      <!-- No Selection State -->
+      <div id="no-selection-panel" class="no-selection">
+        <div class="no-selection-icon">👨‍🎓</div>
+        <h2>No Student Selected</h2>
+        <p>Use the live search bar or select a student from the sidebar to view/edit profile notes.</p>
+      </div>
+
+      <!-- Config Warning Status (If repo settings not set) -->
+      <div id="config-warning" class="status-msg error" style="margin-top: 1rem; justify-content: center; display: none;">
+        ⚠️ Please check config: Ensure owner and repository are correct in data.js.
+      </div>
+    </section>
+  </main>
+
+  <!-- 4. ADD STUDENT MODAL -->
+  <div id="add-student-modal" class="modal-overlay" onclick="closeAddStudentModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <h2 style="margin-bottom: 0.5rem;">Add New Student</h2>
+      <p class="subtitle" style="margin-bottom: 1.5rem;">Create a new student profile in the database.</p>
+      
+      <form id="add-student-form" onsubmit="handleAddStudent(event)">
+        <div class="form-group">
+          <label for="new-first-name">First Name</label>
+          <input type="text" id="new-first-name" required placeholder="e.g. David">
+        </div>
+        <div class="form-group">
+          <label for="new-id-number">ID Number (Password)</label>
+          <input type="text" id="new-id-number" required placeholder="e.g. STU-004">
+        </div>
+        <div class="form-group">
+          <label for="new-notes">Initial Observations (Optional)</label>
+          <textarea id="new-notes" placeholder="Any initial observations..."></textarea>
+        </div>
+        
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeAddStudentModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Student</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Local memory cache of student list to enable instant client operations
+    let localStudents = [];
+    let selectedStudentId = null;
+
+    // Check Authentication state
+    document.addEventListener("DOMContentLoaded", () => {
+      const isAuth = sessionStorage.getItem("teacher_auth") === "true";
+      if (isAuth) {
+        showDashboard();
+      } else {
+        document.getElementById("login-container").style.display = "block";
+      }
+
+      // Handle Login Form Submit
+      document.getElementById("login-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const pwd = document.getElementById("password").value;
+        if (pwd === window.TEACHER_PASSWORD) {
+          sessionStorage.setItem("teacher_auth", "true");
+          showDashboard();
+        } else {
+          const err = document.getElementById("login-error");
+          err.style.display = "flex";
+          setTimeout(() => err.style.display = "none", 3000);
+        }
+      });
+
+      // Handle Live Search Input
+      document.getElementById("search-bar").addEventListener("input", (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        filterStudents(query);
+
+        // Auto-select and open student if search matches a student's first name exactly
+        const exactMatch = localStudents.find(s => s.first_name.toLowerCase() === query);
+        if (exactMatch) {
+          selectStudent(exactMatch.id);
+        }
+      });
+    });
+
+    function showDashboard() {
+      document.getElementById("login-container").style.display = "none";
+      document.getElementById("nav-header").style.display = "flex";
+      document.getElementById("dashboard-container").style.display = "grid";
+      
+      // Load student list
+      localStudents = [...window.students];
+      renderStudentList();
+      
+      // Check GitHub config placeholders
+      checkGitHubConfig();
+    }
+
+    function checkGitHubConfig() {
+      const config = window.GITHUB_CONFIG;
+      if (config.owner === "YOUR_GITHUB_USERNAME" || config.repo === "YOUR_REPO_NAME" || config.token === "YOUR_GITHUB_PAT_HERE") {
+        const warning = document.getElementById("config-warning");
+        warning.innerHTML = "⚠️ Config values placeholder detected in data.js. Updates will not sync to GitHub.";
+        warning.style.display = "flex";
+      }
+    }
+
+    function logout() {
+      sessionStorage.removeItem("teacher_auth");
+      window.location.reload();
+    }
+
+    // Render Student List in Sidebar
+    function renderStudentList() {
+      const listEl = document.getElementById("student-list");
+      listEl.innerHTML = "";
+      
+      localStudents.forEach(student => {
+        const li = document.createElement("li");
+        li.className = `student-item ${selectedStudentId === student.id ? 'active' : ''}`;
+        li.setAttribute("data-id", student.id);
+        li.onclick = () => selectStudent(student.id);
+        
+        li.innerHTML = `
+          <span class="name">${student.first_name}</span>
+          <span class="id-num">${student.id_number}</span>
+        `;
+        listEl.appendChild(li);
+      });
+    }
+
+    // Filter Student List (Search)
+    function filterStudents(query) {
+      const items = document.querySelectorAll(".student-item");
+      items.forEach(item => {
+        const name = item.querySelector(".name").textContent.toLowerCase();
+        if (name.includes(query)) {
+          item.style.display = "flex";
+        } else {
+          item.style.display = "none";
+        }
+      });
+    }
+
+    // Select & Open Student Profile
+    function selectStudent(id) {
+      selectedStudentId = id;
+      
+      // Mark active in sidebar
+      document.querySelectorAll(".student-item").forEach(item => {
+        if (parseInt(item.getAttribute("data-id")) === id) {
+          item.classList.add("active");
+        } else {
+          item.classList.remove("active");
+        }
+      });
+
+      const student = localStudents.find(s => s.id === id);
+      if (student) {
+        document.getElementById("no-selection-panel").style.display = "none";
+        document.getElementById("student-detail-panel").style.display = "block";
+        document.getElementById("student-name").textContent = student.first_name;
+        document.getElementById("student-id").textContent = student.id_number;
+        document.getElementById("student-notes").value = student.notes || "";
+        
+        // Clear previous save message status
+        const statusEl = document.getElementById("save-status");
+        statusEl.style.display = "none";
+      }
+    }
+
+    // Add Student Modal controls
+    function showAddStudentModal() {
+      document.getElementById("add-student-modal").style.display = "flex";
+    }
+
+    function closeAddStudentModal() {
+      document.getElementById("add-student-modal").style.display = "none";
+      document.getElementById("add-student-form").reset();
+    }
+
+    // Handle student creation
+    function handleAddStudent(e) {
+      e.preventDefault();
+      const first_name = document.getElementById("new-first-name").value.trim();
+      const id_number = document.getElementById("new-id-number").value.trim();
+      const notes = document.getElementById("new-notes").value.trim();
+
+      // Check if student id or first name already exists
+      const exists = localStudents.some(s => s.id_number.toLowerCase() === id_number.toLowerCase());
+      if (exists) {
+        alert("A student with this ID number already exists!");
+        return;
+      }
+
+      const newId = localStudents.length > 0 ? Math.max(...localStudents.map(s => s.id)) + 1 : 1;
+      const newStudent = { id: newId, first_name, id_number, notes };
+      
+      localStudents.push(newStudent);
+      renderStudentList();
+      closeAddStudentModal();
+      
+      // Select the newly added student
+      selectStudent(newId);
+      
+      // Auto-trigger sync to GitHub
+      saveNotes();
+    }
+
+    // Save changes and update data.js on GitHub
+    async function saveNotes() {
+      if (selectedStudentId === null) return;
+      
+      const notesValue = document.getElementById("student-notes").value;
+      
+      // Update our local cache first
+      const idx = localStudents.findIndex(s => s.id === selectedStudentId);
+      if (idx !== -1) {
+        localStudents[idx].notes = notesValue;
+      }
+
+      // Display saving state
+      const statusEl = document.getElementById("save-status");
+      statusEl.className = "status-msg info";
+      statusEl.innerHTML = `<span class="spinner"></span> Syncing with GitHub...`;
+      statusEl.style.display = "flex";
+
+      const config = window.GITHUB_CONFIG;
+      
+      // Check if config has been modified from placeholder
+      if (config.owner.startsWith("YOUR_") || config.repo.startsWith("YOUR_")) {
+        statusEl.className = "status-msg error";
+        statusEl.textContent = "❌ Error: Config placeholders detected in data.js. Configure GitHub info to save.";
+        return;
+      }
+
+      const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`;
+      const token = config.token;
+
+      try {
+        // Step 1: Get the current file metadata (specifically the SHA)
+        const getResponse = await fetch(`${url}?ref=${config.branch}`, {
+          headers: {
+            "Authorization": `token ${token}`,
+            "Accept": "application/vnd.github.v3+json"
+          }
+        });
+
+        if (!getResponse.ok) {
+          throw new Error(`Failed to fetch file metadata. Status: ${getResponse.status}`);
+        }
+
+        const fileData = await getResponse.json();
+        const sha = fileData.sha;
+
+        // Step 2: Build the complete string content of the updated data.js file
+        const fileContent = `// Student Management System - Data Store
+// This file is read and written dynamically using the GitHub API.
+
+window.TEACHER_PASSWORD = ${JSON.stringify(window.TEACHER_PASSWORD, null, 2)};
+
+window.GITHUB_CONFIG = ${JSON.stringify(window.GITHUB_CONFIG, null, 2)};
+
+window.students = ${JSON.stringify(localStudents, null, 2)};
+`;
+
+        // Step 3: Base64 encode the content (handles UTF-8 strings properly)
+        const utf8Bytes = new TextEncoder().encode(fileContent);
+        // Base64 encoding the byte stream safely
+        const base64Content = btoa(String.fromCharCode(...utf8Bytes));
+
+        // Step 4: PUT the updated file back to Github
+        const putBody = {
+          message: `Update student database (Aetheris CMS)`,
+          content: base64Content,
+          sha: sha,
+          branch: config.branch
+        };
+
+        const putResponse = await fetch(url, {
+          method: "PUT",
+          headers: {
+            "Authorization": `token ${token}`,
+            "Content-Type": "application/json",
+            "Accept": "application/vnd.github.v3+json"
+          },
+          body: JSON.stringify(putBody)
+        });
+
+        if (!putResponse.ok) {
+          const errBody = await putResponse.json();
+          throw new Error(errBody.message || "Failed to write file back to GitHub.");
+        }
+
+        // Successfully updated!
+        statusEl.className = "status-msg success";
+        statusEl.textContent = "✅ Saved and Synced to GitHub!";
+        
+        // Update the global state so parent portal could reload it locally if needed
+        window.students = [...localStudents];
+
+      } catch (error) {
+        console.error("GitHub Sync Error:", error);
+        statusEl.className = "status-msg error";
+        statusEl.textContent = `❌ Error: ${error.message}`;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Management Portal</title>
+  <meta name="description" content="Secure portal selector for teachers and parents to access student observations.">
+  <link rel="stylesheet" href="style.css">
+  <!-- Load Google Fonts for premium typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header style="margin-bottom: 3rem; text-align: center; animation: slideDown 0.6s ease-out;">
+    <h1 style="font-size: 2.8rem; font-weight: 800; letter-spacing: -0.02em;">AETHERIS</h1>
+    <p class="subtitle" style="margin-bottom: 0;">Student Observation & Development Portal</p>
+  </header>
+
+  <main class="portal-container">
+    <!-- Teacher Portal Card -->
+    <section class="portal-card" id="btn-teacher-portal" onclick="window.location.href='teacher.html'">
+      <div class="portal-icon">👨‍🏫</div>
+      <h2 style="font-size: 1.5rem; margin-bottom: 0.8rem; font-weight: 700;">Teacher Portal</h2>
+      <p class="subtitle" style="margin-bottom: 0; font-size: 0.9rem; max-width: 280px;">
+        Access classroom observations, live student search, edit development notes, and synchronize records.
+      </p>
+    </section>
+
+    <!-- Parent Portal Card -->
+    <section class="portal-card" id="btn-parent-portal" onclick="window.location.href='parent.html'">
+      <div class="portal-icon">👪</div>
+      <h2 style="font-size: 1.5rem; margin-bottom: 0.8rem; font-weight: 700;">Parent Portal</h2>
+      <p class="subtitle" style="margin-bottom: 0; font-size: 0.9rem; max-width: 280px;">
+        Securely sign in using your child's first name and ID to read teacher observation notes.
+      </p>
+    </section>
+  </main>
+
+  <footer style="margin-top: 4rem; font-size: 0.8rem; color: var(--text-muted); text-align: center; opacity: 0.7;">
+    &copy; 2026 Aetheris Portal Systems. Secure and static.
+  </footer>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parent Portal - Aetheris</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Load Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- Load student data from data.js -->
+  <script src="data.js"></script>
+</head>
+<body>
+
+  <!-- 1. LOGIN SCREEN -->
+  <div id="login-container" class="glass-card">
+    <h1>Parent Login</h1>
+    <p class="subtitle">Enter your child's credentials to view observations.</p>
+    <form id="parent-login-form">
+      <div class="form-group">
+        <label for="parent-username">Student First Name</label>
+        <input type="text" id="parent-username" required placeholder="e.g. Alice" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="parent-password">Student ID Number</label>
+        <input type="password" id="parent-password" required placeholder="e.g. STU-001">
+      </div>
+      <button type="submit" class="btn btn-primary" id="btn-parent-login">Sign In</button>
+      <div id="login-error" class="status-msg error">❌ Invalid student name or ID number</div>
+    </form>
+    <div style="margin-top: 1.5rem; text-align: center;">
+      <a href="index.html" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">← Back to Selector</a>
+    </div>
+  </div>
+
+  <!-- 2. PRIVATE DASHBOARD (Hidden by default) -->
+  <div id="dashboard-container" class="parent-dashboard" style="display: none; width: 90%; animation: fadeIn 0.6s ease-out;">
+    <header class="nav-header" style="margin-bottom: 2rem; width: 100%; margin-top: 0;">
+      <div class="nav-brand">AETHERIS // PARENT PORTAL</div>
+      <button class="btn-logout" onclick="logout()">Logout</button>
+    </header>
+
+    <div class="glass-card" style="max-width: 100%; padding: 3rem;">
+      <div class="profile-header" style="margin-bottom: 2rem;">
+        <div>
+          <span style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Student Observations</span>
+          <h2 id="child-name" class="profile-title" style="font-size: 2.2rem; margin-top: 0.2rem;">Child Name</h2>
+        </div>
+        <div id="child-id" class="profile-id">ID Number</div>
+      </div>
+
+      <div class="form-group">
+        <label style="margin-bottom: 0.8rem; font-size: 0.9rem;">Teacher Comments & Feedback</label>
+        <div id="notes-content" class="notes-display-box">
+          <!-- Child observations rendered here -->
+        </div>
+      </div>
+
+      <div style="margin-top: 2rem; color: var(--text-muted); font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; border-top: 1px solid var(--glass-border); padding-top: 1.5rem;">
+        <span>🔒 Secure private access. Only you can view this student's records.</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const isAuth = sessionStorage.getItem("parent_auth") === "true";
+      const studentId = sessionStorage.getItem("parent_child_id");
+
+      if (isAuth && studentId) {
+        showDashboard(parseInt(studentId));
+      } else {
+        document.getElementById("login-container").style.display = "block";
+      }
+
+      // Handle Parent Login Form Submit
+      document.getElementById("parent-login-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const username = document.getElementById("parent-username").value.trim().toLowerCase();
+        const password = document.getElementById("parent-password").value.trim();
+
+        // AUTHENTICATION RULE: first_name (case-insensitive) and id_number matches
+        const student = window.students.find(s => 
+          s.first_name.toLowerCase() === username && 
+          s.id_number.toLowerCase() === password.toLowerCase() // Case insensitive ID is safer, but matches exact ID structure
+        );
+
+        if (student) {
+          sessionStorage.setItem("parent_auth", "true");
+          sessionStorage.setItem("parent_child_id", student.id);
+          showDashboard(student.id);
+        } else {
+          const err = document.getElementById("login-error");
+          err.style.display = "flex";
+          setTimeout(() => err.style.display = "none", 4000);
+        }
+      });
+    });
+
+    function showDashboard(studentId) {
+      const student = window.students.find(s => s.id === studentId);
+      if (!student) {
+        // Fallback if student ID not found in data
+        logout();
+        return;
+      }
+
+      // Hide login and show dashboard container
+      document.getElementById("login-container").style.display = "none";
+      document.getElementById("dashboard-container").style.display = "block";
+
+      // Render only the child's information
+      document.getElementById("child-name").textContent = student.first_name;
+      document.getElementById("child-id").textContent = student.id_number;
+      
+      const notesEl = document.getElementById("notes-content");
+      if (student.notes && student.notes.trim() !== "") {
+        notesEl.textContent = student.notes;
+      } else {
+        notesEl.innerHTML = `<em style="color: var(--text-muted);">No observations have been recorded for your child yet.</em>`;
+      }
+    }
+
+    function logout() {
+      sessionStorage.removeItem("parent_auth");
+      sessionStorage.removeItem("parent_child_id");
+      window.location.reload();
+    }
+  </script>
+</body>
+</html>
