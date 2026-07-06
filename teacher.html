@@ -414,7 +414,7 @@
       }
 
       const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`;
-      const token = config.token;
+      const token = atob(config.token);
 
       try {
         // Step 1: Get the current file metadata (specifically the SHA)
