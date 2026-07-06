@@ -1,4 +1,12 @@
-// Aetheris Portal Systems - Unified Frontend Controller (app.js)
+// Load from localStorage backup if available, otherwise fall back to window.students from data.js
+const cachedStudents = localStorage.getItem("aetheris_students_backup");
+if (cachedStudents) {
+  try {
+    window.students = JSON.parse(cachedStudents);
+  } catch (e) {
+    console.error("Failed to parse cached students:", e);
+  }
+}
 
 let localStudents = [];
 let selectedStudentId = null;
@@ -11,6 +19,14 @@ document.addEventListener("DOMContentLoaded", () => {
     initParentPortal();
   }
 });
+
+function saveToLocalBackup() {
+  try {
+    localStorage.setItem("aetheris_students_backup", JSON.stringify(window.students));
+  } catch (e) {
+    console.error("Failed to save to local backup:", e);
+  }
+}
 
 // ==========================================
 // HELPER: Get token from localStorage only
@@ -59,17 +75,33 @@ async function fetchLatestStudents() {
   const token = getToken();
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}?ref=${config.branch}&_=${Date.now()}`;
   
-  const headers = { "Accept": "application/vnd.github.v3+json" };
-  if (token) {
-    headers["Authorization"] = `token ${token}`;
-  }
+  let response;
+  const publicHeaders = { "Accept": "application/vnd.github.v3+json" };
 
   try {
-    const response = await fetch(url, { headers, cache: "no-store" });
+    if (token) {
+      // Try with token first to leverage higher rate limits
+      response = await fetch(url, { 
+        headers: { 
+          "Accept": "application/vnd.github.v3+json",
+          "Authorization": `token ${token}`
+        }, 
+        cache: "no-store" 
+      });
+      // If unauthorized (invalid/revoked token), retry without token
+      if (response.status === 401) {
+        console.warn("GitHub token returned 401 (invalid/revoked). Retrying without token...");
+        response = await fetch(url, { headers: publicHeaders, cache: "no-store" });
+      }
+    } else {
+      response = await fetch(url, { headers: publicHeaders, cache: "no-store" });
+    }
+
     if (!response.ok) {
       console.warn(`Failed to fetch live database. Status: ${response.status}`);
       return null;
     }
+
     const fileData = await response.json();
     const binaryString = atob(fileData.content.replace(/\s/g, ''));
     const len = binaryString.length;
@@ -81,7 +113,11 @@ async function fetchLatestStudents() {
 
     const match = fileContent.match(/window\.students\s*=\s*(\[[\s\S]*\])/);
     if (match) {
-      return JSON.parse(match[1]);
+      const parsed = JSON.parse(match[1]);
+      // Update local storage backup with the fresh data
+      window.students = parsed;
+      saveToLocalBackup();
+      return parsed;
     }
   } catch (err) {
     console.warn("Error loading latest student data from GitHub:", err);
@@ -358,6 +394,11 @@ function saveObsModal() {
     const modal = document.getElementById("edit-obs-modal");
     if (modal) modal.style.display = "none";
     editingObsIndex = null;
+    
+    // Update global state and save local storage backup immediately
+    window.students = [...localStudents];
+    saveToLocalBackup();
+    
     renderObservationHistory(student);
     syncDatabase();
   }
@@ -368,6 +409,10 @@ function deleteObservation(index) {
   const student = localStudents.find(s => s.id === selectedStudentId);
   if (student) {
     student.observations.splice(index, 1);
+    
+    window.students = [...localStudents];
+    saveToLocalBackup();
+    
     renderObservationHistory(student);
     syncDatabase();
   }
@@ -416,6 +461,11 @@ function saveStudentPassword() {
     student.id_number = newPassword;
     const sId = document.getElementById("student-id");
     if (sId) sId.textContent = newPassword;
+    
+    // Update global state and save local storage backup immediately
+    window.students = [...localStudents];
+    saveToLocalBackup();
+    
     renderStudentList();
 
     status.className = "status-msg info"; status.style.display = "flex";
@@ -466,6 +516,11 @@ function handleAddStudent(e) {
   }
 
   localStudents.push(newStudent);
+  
+  // Update global state and save local storage backup immediately
+  window.students = [...localStudents];
+  saveToLocalBackup();
+  
   renderStudentList();
   closeAddStudentModal();
   selectStudent(newId);
@@ -489,6 +544,11 @@ function addNewObservation() {
     ensureObservationsArray(student);
     student.observations.push({ date: new Date().toLocaleString(), text: textVal });
     textInput.value = "";
+    
+    // Update global state and save local storage backup immediately
+    window.students = [...localStudents];
+    saveToLocalBackup();
+    
     renderObservationHistory(student);
     syncDatabase();
   }
