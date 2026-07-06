@@ -360,7 +360,10 @@ async function syncDatabase() {
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`;
 
   try {
-    const getResponse = await fetch(`${url}?ref=${config.branch}`, {
+    // Cache-bust with timestamp so we always get the latest SHA from GitHub
+    const bust = `?ref=${config.branch}&_=${Date.now()}`;
+    const getResponse = await fetch(`${url}${bust}`, {
+      cache: "no-store",
       headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
     });
 
@@ -387,6 +390,30 @@ async function syncDatabase() {
 
     if (!putResponse.ok) {
       const errBody = await putResponse.json();
+      // If SHA mismatch, fetch the fresh SHA and retry once automatically
+      if (putResponse.status === 409 || (errBody.message && errBody.message.includes("does not match"))) {
+        const retryGet = await fetch(`${url}?ref=${config.branch}&_=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
+        });
+        if (retryGet.ok) {
+          const freshSha = (await retryGet.json()).sha;
+          putBody.sha = freshSha;
+          const retryPut = await fetch(url, {
+            method: "PUT",
+            headers: { "Authorization": `token ${token}`, "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json" },
+            body: JSON.stringify(putBody)
+          });
+          if (!retryPut.ok) {
+            const retryErr = await retryPut.json();
+            throw new Error(retryErr.message || "Retry failed to write file back to GitHub.");
+          }
+          // Retry succeeded — fall through to success handling
+          if (statusEl) { statusEl.className = "status-msg success"; statusEl.style.display = "flex"; statusEl.textContent = "Success: Saved and Synced to GitHub!"; }
+          window.students = [...localStudents];
+          return;
+        }
+      }
       throw new Error(errBody.message || "Failed to write file back to GitHub.");
     }
 
