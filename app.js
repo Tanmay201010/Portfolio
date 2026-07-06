@@ -48,6 +48,48 @@ window.students = ${JSON.stringify(localStudents, null, 2)};
 }
 
 // ==========================================
+// Fetch absolute latest data.js from GitHub API
+// ==========================================
+async function fetchLatestStudents() {
+  const config = window.GITHUB_CONFIG;
+  if (!config || !config.owner || !config.repo || config.owner.startsWith("YOUR_") || config.repo.startsWith("YOUR_")) {
+    return null; // Not configured yet
+  }
+
+  const token = getToken();
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}?ref=${config.branch}&_=${Date.now()}`;
+  
+  const headers = { "Accept": "application/vnd.github.v3+json" };
+  if (token) {
+    headers["Authorization"] = `token ${token}`;
+  }
+
+  try {
+    const response = await fetch(url, { headers, cache: "no-store" });
+    if (!response.ok) {
+      console.warn(`Failed to fetch live database. Status: ${response.status}`);
+      return null;
+    }
+    const fileData = await response.json();
+    const binaryString = atob(fileData.content.replace(/\s/g, ''));
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const fileContent = new TextDecoder("utf-8").decode(bytes);
+
+    const match = fileContent.match(/window\.students\s*=\s*(\[[\s\S]*\])/);
+    if (match) {
+      return JSON.parse(match[1]);
+    }
+  } catch (err) {
+    console.warn("Error loading latest student data from GitHub:", err);
+  }
+  return null;
+}
+
+// ==========================================
 // 1. TEACHER PORTAL LOGIC
 // ==========================================
 
@@ -90,7 +132,7 @@ function initTeacherPortal() {
   }
 }
 
-function showTeacherDashboard() {
+async function showTeacherDashboard() {
   const loginContainer = document.getElementById("login-container");
   const navHeader = document.getElementById("nav-header");
   const dbContainer = document.getElementById("dashboard-container");
@@ -99,6 +141,7 @@ function showTeacherDashboard() {
   if (navHeader) navHeader.style.display = "flex";
   if (dbContainer) dbContainer.style.display = "grid";
 
+  // 1. Load the initial/cached student list first so dashboard is instant
   localStudents = [...window.students];
   renderStudentList();
 
@@ -113,6 +156,33 @@ function showTeacherDashboard() {
   }
 
   checkGitHubConfig();
+
+  // 2. Fetch the absolute latest students array from GitHub in the background
+  const listEl = document.getElementById("student-list");
+  if (listEl) {
+    const loadingDiv = document.createElement("div");
+    loadingDiv.id = "sidebar-syncing-indicator";
+    loadingDiv.style.cssText = "padding: 0.6rem; text-align: center; color: var(--text-muted); font-size: 0.8rem;";
+    loadingDiv.innerHTML = `<span class="spinner"></span> Syncing latest data...`;
+    listEl.parentNode.insertBefore(loadingDiv, listEl);
+  }
+
+  try {
+    const latestStudents = await fetchLatestStudents();
+    if (latestStudents) {
+      window.students = latestStudents;
+      localStudents = [...latestStudents];
+    }
+  } catch (err) {
+    console.warn("Failed background database sync:", err);
+  } finally {
+    const indicator = document.getElementById("sidebar-syncing-indicator");
+    if (indicator) indicator.remove();
+    renderStudentList();
+    if (selectedStudentId !== null) {
+      selectStudent(selectedStudentId);
+    }
+  }
 }
 
 function checkGitHubConfig() {
@@ -582,8 +652,24 @@ function initParentPortal() {
 
   const parentLoginForm = document.getElementById("parent-login-form");
   if (parentLoginForm) {
-    parentLoginForm.addEventListener("submit", (e) => {
+    parentLoginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const statusEl = document.getElementById("login-error");
+      if (statusEl) {
+        statusEl.className = "status-msg info";
+        statusEl.style.display = "flex";
+        statusEl.innerHTML = `<span class="spinner"></span> Verifying credentials...`;
+      }
+
+      try {
+        const latestStudents = await fetchLatestStudents();
+        if (latestStudents) {
+          window.students = latestStudents;
+        }
+      } catch (err) {
+        console.warn("Could not retrieve latest data, fallback to local:", err);
+      }
+
       const username = document.getElementById("parent-username").value.trim().toLowerCase();
       const password = document.getElementById("parent-password").value.trim();
 
@@ -593,25 +679,46 @@ function initParentPortal() {
       );
 
       if (student) {
+        if (statusEl) statusEl.style.display = "none";
         sessionStorage.setItem("parent_auth", "true");
         sessionStorage.setItem("parent_child_id", student.id);
         showParentDashboard(student.id);
       } else {
-        const err = document.getElementById("login-error");
-        if (err) { err.style.display = "flex"; setTimeout(() => err.style.display = "none", 4000); }
+        if (statusEl) {
+          statusEl.className = "status-msg error";
+          statusEl.style.display = "flex";
+          statusEl.textContent = "Error: Invalid username or password.";
+          setTimeout(() => statusEl.style.display = "none", 4000);
+        }
       }
     });
   }
 }
 
-function showParentDashboard(studentId) {
-  const student = window.students.find(s => s.id === studentId);
-  if (!student) { logout(); return; }
-
+async function showParentDashboard(studentId) {
   const loginContainer = document.getElementById("login-container");
   const dbContainer = document.getElementById("dashboard-container");
   if (loginContainer) loginContainer.style.display = "none";
   if (dbContainer) dbContainer.style.display = "block";
+
+  // 1. Immediately render initial data so portal feels snappy
+  renderParentData(studentId);
+
+  // 2. Fetch fresh updates directly from GitHub in the background
+  try {
+    const latestStudents = await fetchLatestStudents();
+    if (latestStudents) {
+      window.students = latestStudents;
+      renderParentData(studentId);
+    }
+  } catch (err) {
+    console.warn("Background parent data sync failed:", err);
+  }
+}
+
+function renderParentData(studentId) {
+  const student = window.students.find(s => s.id === studentId);
+  if (!student) { logout(); return; }
 
   const childName = document.getElementById("child-name");
   const childId = document.getElementById("child-id");
