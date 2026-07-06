@@ -5,19 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Teacher Portal - Aetheris</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Load Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <!-- Load student data & config from data.js -->
   <script src="data.js"></script>
-  <!-- Load unified application controller -->
   <script src="app.js" defer></script>
 </head>
 <body>
 
   <!-- 1. LOGIN SCREEN -->
-  <div id="login-container" class="glass-card">
+  <div id="login-container" class="glass-card" style="display:none;">
     <h1>Teacher Login</h1>
     <p class="subtitle">Please enter your teacher security password.</p>
     <form id="login-form">
@@ -26,14 +23,14 @@
         <input type="password" id="password" required placeholder="••••••••">
       </div>
       <button type="submit" class="btn btn-primary" id="btn-login-submit">Login</button>
-      <div id="login-error" class="status-msg error" style="display: none;">Error: Invalid Password</div>
+      <div id="login-error" class="status-msg error" style="display: none;">Invalid Password</div>
     </form>
     <div style="margin-top: 1.5rem; text-align: center;">
       <a href="index.html" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">← Back to Selector</a>
     </div>
   </div>
 
-  <!-- 2. DASHBOARD NAV HEADER (Hidden by default) -->
+  <!-- 2. DASHBOARD NAV HEADER -->
   <header id="nav-header" class="nav-header" style="display: none;">
     <div class="nav-brand">AETHERIS // TEACHER</div>
     <div class="nav-user">
@@ -42,9 +39,10 @@
     </div>
   </header>
 
-  <!-- 3. MAIN DASHBOARD CONTENT (Hidden by default) -->
+  <!-- 3. MAIN DASHBOARD -->
   <main id="dashboard-container" class="dashboard-container" style="display: none;">
-    <!-- Sidebar: Student List & Sync Settings -->
+
+    <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
         <h2 class="sidebar-title">Students</h2>
@@ -56,65 +54,58 @@
       <!-- GitHub Settings Panel -->
       <div style="border-top: 1px solid var(--glass-border); padding-top: 1.2rem; margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
         <h3 style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">GitHub Config Settings</h3>
-        
         <div class="form-group" style="margin-bottom: 0.5rem; gap: 0.2rem;">
           <label style="font-size: 0.7rem;">Username</label>
           <input type="text" id="cfg-owner" style="padding: 0.4rem 0.6rem; font-size: 0.85rem; border-radius: 8px;">
         </div>
-        
         <div class="form-group" style="margin-bottom: 0.5rem; gap: 0.2rem;">
           <label style="font-size: 0.7rem;">Repo Name</label>
           <input type="text" id="cfg-repo" style="padding: 0.4rem 0.6rem; font-size: 0.85rem; border-radius: 8px;">
         </div>
-        
         <div class="form-group" style="margin-bottom: 0.8rem; gap: 0.2rem;">
           <label style="font-size: 0.7rem;">GitHub PAT Token</label>
           <input type="password" id="cfg-token" placeholder="github_pat_..." style="padding: 0.4rem 0.6rem; font-size: 0.85rem; border-radius: 8px;">
         </div>
-        
-        <button class="btn btn-secondary" onclick="updateGitHubSettings()" style="padding: 0.5rem 1rem; font-size: 0.8rem; border-radius: 8px; font-weight: 600;">Update & Sync Config</button>
+        <button class="btn btn-secondary" onclick="updateGitHubSettings()" style="padding: 0.5rem 1rem; font-size: 0.8rem; border-radius: 8px; font-weight: 600;">Update &amp; Sync Config</button>
         <div id="cfg-status" class="status-msg" style="display: none; font-size: 0.75rem; margin-top: 0.5rem; padding: 0.4rem 0.6rem;"></div>
       </div>
     </aside>
 
-    <!-- Main Panel: Profile view & Notes editor -->
+    <!-- Main Panel -->
     <section class="main-panel">
-      <!-- Search Input -->
       <div class="search-wrapper">
         <input type="text" id="search-bar" placeholder="Search student by name..." autocomplete="off">
       </div>
 
-      <!-- Detail Panel -->
+      <!-- Student Detail Panel -->
       <div id="student-detail-panel" style="display: none;" class="profile-view">
+
+        <!-- Profile Header with edit icon for password -->
         <div class="profile-header">
           <div>
             <h2 id="student-name" class="profile-title">Student Name</h2>
-            <div id="student-id" class="profile-id">ID Number</div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <div id="student-id" class="profile-id">ID Number</div>
+              <!-- Pencil icon to edit password -->
+              <button class="icon-edit-btn" onclick="openPasswordModal()" title="Edit student password">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Password (ID Number) Edit Section -->
-        <div class="password-edit-section">
-          <label>Student Login Password (ID Number)</label>
-          <div class="password-edit-row">
-            <input type="text" id="edit-password-input" placeholder="Enter new password / ID number...">
-            <button class="obs-btn obs-btn-save" onclick="saveStudentPassword()">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              Update Password
-            </button>
-          </div>
-          <div id="password-edit-status" class="status-msg" style="display:none; font-size:0.78rem; padding: 0.35rem 0.6rem; margin-top:0;"></div>
-        </div>
-
-        <!-- Past Observations List -->
+        <!-- Observation History -->
         <div>
           <label style="margin-bottom: 0.5rem; display: block;">Observation History</label>
           <div id="observations-history-list" class="observations-history">
-            <!-- Dynamically rendered observation cards -->
+            <!-- Rendered via JS -->
           </div>
         </div>
 
-        <!-- Add New Observation Form -->
+        <!-- New Observation -->
         <div class="form-group" style="flex: 1;">
           <label for="new-observation-text">New Observation</label>
           <textarea id="new-observation-text" placeholder="Write a new observation entry..."></textarea>
@@ -128,7 +119,6 @@
         </div>
       </div>
 
-
       <!-- No Selection State -->
       <div id="no-selection-panel" class="no-selection">
         <div class="no-selection-icon">
@@ -138,33 +128,35 @@
         <p>Use the live search bar or select a student from the sidebar to view observation history.</p>
       </div>
 
-      <!-- Config Warning Status (If repo settings not set) -->
       <div id="config-warning" class="status-msg error" style="display: none; margin-top: 1rem; justify-content: center;">
         Warning: Please check config. Ensure owner and repository are correct in data.js.
       </div>
     </section>
   </main>
 
-  <!-- 4. ADD STUDENT MODAL -->
+  <!-- ========= MODAL: Add New Student ========= -->
   <div id="add-student-modal" class="modal-overlay" onclick="closeAddStudentModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
-      <h2 style="margin-bottom: 0.5rem;">Add New Student</h2>
+      <div class="modal-header">
+        <h2>Add New Student</h2>
+        <button class="modal-close-btn" onclick="closeAddStudentModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
       <p class="subtitle" style="margin-bottom: 1.5rem;">Create a new student profile in the database.</p>
-      
       <form id="add-student-form" onsubmit="handleAddStudent(event)">
         <div class="form-group">
           <label for="new-first-name">First Name</label>
           <input type="text" id="new-first-name" required placeholder="e.g. David">
         </div>
         <div class="form-group">
-          <label for="new-id-number">ID Number (Password)</label>
+          <label for="new-id-number">ID Number (Login Password)</label>
           <input type="text" id="new-id-number" required placeholder="e.g. STU-004">
         </div>
         <div class="form-group">
           <label for="new-initial-observation">Initial Observation (Optional)</label>
           <textarea id="new-initial-observation" placeholder="Any initial observations..."></textarea>
         </div>
-        
         <div style="display: flex; gap: 1rem; margin-top: 2rem;">
           <button type="button" class="btn btn-secondary" onclick="closeAddStudentModal()">Cancel</button>
           <button type="submit" class="btn btn-primary">Create Student</button>
@@ -172,5 +164,50 @@
       </form>
     </div>
   </div>
+
+  <!-- ========= MODAL: Edit Student Password ========= -->
+  <div id="password-modal" class="modal-overlay" onclick="closePasswordModal(event)">
+    <div class="modal-content" style="max-width: 400px;" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>Edit Student Password</h2>
+        <button class="modal-close-btn" onclick="closePasswordModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p class="subtitle" style="margin-bottom: 1.2rem;">This is the password the student's parent uses to log in to the Parent Portal.</p>
+      <div class="form-group">
+        <label for="modal-password-input">New Password / ID Number</label>
+        <input type="text" id="modal-password-input" placeholder="e.g. STU-007">
+      </div>
+      <div id="modal-password-status" class="status-msg" style="display:none; margin-top: 0.5rem;"></div>
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button class="btn btn-secondary" onclick="closePasswordModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveStudentPassword()">Save Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========= MODAL: Edit Observation ========= -->
+  <div id="edit-obs-modal" class="modal-overlay" onclick="closeObsModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>Edit Observation</h2>
+        <button class="modal-close-btn" onclick="closeObsModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p class="subtitle" id="edit-obs-date-label" style="margin-bottom: 1rem;"></p>
+      <div class="form-group">
+        <label for="modal-obs-textarea">Observation Text</label>
+        <textarea id="modal-obs-textarea" style="min-height: 130px;" placeholder="Edit observation..."></textarea>
+      </div>
+      <div id="modal-obs-status" class="status-msg" style="display:none; margin-top: 0.5rem;"></div>
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button class="btn btn-secondary" onclick="closeObsModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveObsModal()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

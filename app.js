@@ -192,13 +192,6 @@ function selectStudent(id) {
     const textInput = document.getElementById("new-observation-text");
     if (textInput) textInput.value = "";
 
-    // Pre-fill the password edit input with current ID number
-    const pwInput = document.getElementById("edit-password-input");
-    if (pwInput) pwInput.value = student.id_number;
-
-    const pwStatus = document.getElementById("password-edit-status");
-    if (pwStatus) pwStatus.style.display = "none";
-
     const statusEl = document.getElementById("save-status");
     if (statusEl) statusEl.style.display = "none";
   }
@@ -214,6 +207,9 @@ function ensureObservationsArray(student) {
   }
 }
 
+// Tracks which observation index is being edited in the modal
+let editingObsIndex = null;
+
 function renderObservationHistory(student) {
   const el = document.getElementById("observations-history-list");
   if (!el) return;
@@ -227,30 +223,20 @@ function renderObservationHistory(student) {
   student.observations.forEach((obs, index) => {
     const card = document.createElement("div");
     card.className = "observation-card";
-    card.setAttribute("data-index", index);
 
     card.innerHTML = `
       <div class="observation-card-header">
         <div class="observation-date">${obs.date}</div>
         <div class="observation-actions">
-          <button class="obs-btn obs-btn-edit" onclick="startEditObservation(${index})" title="Edit observation">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            Edit
+          <button class="icon-edit-btn" onclick="openObsModal(${index})" title="Edit this observation">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
-          <button class="obs-btn obs-btn-delete" onclick="deleteObservation(${index})" title="Delete observation">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-            Delete
+          <button class="icon-delete-btn" onclick="deleteObservation(${index})" title="Delete this observation">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
           </button>
         </div>
       </div>
-      <div class="observation-text" id="obs-text-${index}">${obs.text}</div>
-      <div class="obs-edit-area" id="obs-edit-${index}" style="display:none;">
-        <textarea class="obs-edit-textarea" id="obs-textarea-${index}">${obs.text}</textarea>
-        <div class="obs-edit-buttons">
-          <button class="obs-btn obs-btn-save" onclick="saveEditObservation(${index})">Save Changes</button>
-          <button class="obs-btn obs-btn-cancel" onclick="cancelEditObservation(${index})">Cancel</button>
-        </div>
-      </div>
+      <div class="observation-text">${obs.text}</div>
     `;
     el.appendChild(card);
   });
@@ -258,44 +244,50 @@ function renderObservationHistory(student) {
   el.scrollTop = el.scrollHeight;
 }
 
-function startEditObservation(index) {
-  // Hide text, show editor
-  const textEl = document.getElementById(`obs-text-${index}`);
-  const editArea = document.getElementById(`obs-edit-${index}`);
-  const textarea = document.getElementById(`obs-textarea-${index}`);
-  if (textEl) textEl.style.display = "none";
-  if (editArea) editArea.style.display = "block";
-  if (textarea) {
-    textarea.focus();
-    // Move cursor to end
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  }
-}
+// ---- Observation Edit Modal ----
 
-function cancelEditObservation(index) {
-  const textEl = document.getElementById(`obs-text-${index}`);
-  const editArea = document.getElementById(`obs-edit-${index}`);
-  const textarea = document.getElementById(`obs-textarea-${index}`);
+function openObsModal(index) {
   const student = localStudents.find(s => s.id === selectedStudentId);
-  // Reset textarea to original value
-  if (textarea && student) textarea.value = student.observations[index].text;
-  if (textEl) textEl.style.display = "block";
-  if (editArea) editArea.style.display = "none";
+  if (!student) return;
+  editingObsIndex = index;
+  const obs = student.observations[index];
+
+  const modal = document.getElementById("edit-obs-modal");
+  const dateLabel = document.getElementById("edit-obs-date-label");
+  const textarea = document.getElementById("modal-obs-textarea");
+  const status = document.getElementById("modal-obs-status");
+
+  if (dateLabel) dateLabel.textContent = `Date: ${obs.date}`;
+  if (textarea) { textarea.value = obs.text; }
+  if (status) status.style.display = "none";
+  if (modal) modal.style.display = "flex";
+  setTimeout(() => { if (textarea) textarea.focus(); }, 100);
 }
 
-function saveEditObservation(index) {
-  const textarea = document.getElementById(`obs-textarea-${index}`);
-  if (!textarea) return;
-  const newText = textarea.value.trim();
+function closeObsModal(e) {
+  if (e && e.target !== document.getElementById("edit-obs-modal")) return;
+  const modal = document.getElementById("edit-obs-modal");
+  if (modal) modal.style.display = "none";
+  editingObsIndex = null;
+}
+
+function saveObsModal() {
+  if (editingObsIndex === null) return;
+  const textarea = document.getElementById("modal-obs-textarea");
+  const status = document.getElementById("modal-obs-status");
+  const newText = textarea ? textarea.value.trim() : "";
+
   if (newText === "") {
-    alert("Observation text cannot be empty!");
+    if (status) { status.className = "status-msg error"; status.style.display = "flex"; status.textContent = "Observation text cannot be empty."; }
     return;
   }
 
   const student = localStudents.find(s => s.id === selectedStudentId);
   if (student) {
-    student.observations[index].text = newText;
-    // Keep the original date, just update the text
+    student.observations[editingObsIndex].text = newText;
+    const modal = document.getElementById("edit-obs-modal");
+    if (modal) modal.style.display = "none";
+    editingObsIndex = null;
     renderObservationHistory(student);
     syncDatabase();
   }
@@ -303,7 +295,6 @@ function saveEditObservation(index) {
 
 function deleteObservation(index) {
   if (!confirm("Are you sure you want to delete this observation? This cannot be undone.")) return;
-
   const student = localStudents.find(s => s.id === selectedStudentId);
   if (student) {
     student.observations.splice(index, 1);
@@ -312,51 +303,64 @@ function deleteObservation(index) {
   }
 }
 
+// ---- Password Edit Modal ----
+
+function openPasswordModal() {
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (!student) return;
+  const modal = document.getElementById("password-modal");
+  const input = document.getElementById("modal-password-input");
+  const status = document.getElementById("modal-password-status");
+  if (input) input.value = student.id_number;
+  if (status) status.style.display = "none";
+  if (modal) modal.style.display = "flex";
+  setTimeout(() => { if (input) { input.select(); } }, 100);
+}
+
+function closePasswordModal(e) {
+  if (e && e.target !== document.getElementById("password-modal")) return;
+  const modal = document.getElementById("password-modal");
+  if (modal) modal.style.display = "none";
+}
+
 function saveStudentPassword() {
   if (selectedStudentId === null) return;
+  const input = document.getElementById("modal-password-input");
+  const status = document.getElementById("modal-password-status");
+  if (!input || !status) return;
 
-  const pwInput = document.getElementById("edit-password-input");
-  const pwStatus = document.getElementById("password-edit-status");
-  if (!pwInput || !pwStatus) return;
-
-  const newPassword = pwInput.value.trim();
+  const newPassword = input.value.trim();
   if (newPassword === "") {
-    pwStatus.className = "status-msg error";
-    pwStatus.style.display = "flex";
-    pwStatus.textContent = "Error: Password cannot be empty.";
-    return;
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = "Password cannot be empty."; return;
   }
 
-  // Check uniqueness — no two students can have the same ID/password
   const duplicate = localStudents.find(s => s.id !== selectedStudentId && s.id_number.toLowerCase() === newPassword.toLowerCase());
   if (duplicate) {
-    pwStatus.className = "status-msg error";
-    pwStatus.style.display = "flex";
-    pwStatus.textContent = `Error: "${newPassword}" is already used by another student.`;
-    return;
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = `"${newPassword}" is already used by another student.`; return;
   }
 
   const student = localStudents.find(s => s.id === selectedStudentId);
   if (student) {
     student.id_number = newPassword;
-
-    // Update the displayed ID badge in the profile header
     const sId = document.getElementById("student-id");
     if (sId) sId.textContent = newPassword;
-
-    // Also update the student list sidebar
     renderStudentList();
 
-    pwStatus.className = "status-msg success";
-    pwStatus.style.display = "flex";
-    pwStatus.textContent = `Password updated to "${newPassword}" — syncing...`;
+    status.className = "status-msg info"; status.style.display = "flex";
+    status.innerHTML = `<span class="spinner"></span> Saving...`;
 
     syncDatabase().then(() => {
-      pwStatus.textContent = `Password updated to "${newPassword}" and saved!`;
-      setTimeout(() => { pwStatus.style.display = "none"; }, 4000);
+      status.className = "status-msg success";
+      status.textContent = `Password updated to "${newPassword}"!`;
+      setTimeout(() => {
+        const modal = document.getElementById("password-modal");
+        if (modal) modal.style.display = "none";
+      }, 1800);
     }).catch(err => {
-      pwStatus.className = "status-msg error";
-      pwStatus.textContent = `Saved locally but sync failed: ${err.message}`;
+      status.className = "status-msg error";
+      status.textContent = `Sync failed: ${err.message}`;
     });
   }
 }

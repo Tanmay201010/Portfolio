@@ -616,7 +616,7 @@ textarea {
 }
 
 /* ================================================
-   OBSERVATION CARD: Edit / Delete Controls
+   OBSERVATION CARD: Icon Buttons (appear on hover)
    ================================================ */
 
 .observation-card {
@@ -633,7 +633,7 @@ textarea {
 
 .observation-actions {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.35rem;
   opacity: 0;
   transition: opacity 0.2s ease;
   flex-shrink: 0;
@@ -642,6 +642,69 @@ textarea {
 .observation-card:hover .observation-actions {
   opacity: 1;
 }
+
+/* Small icon-only buttons used on obs cards and profile header */
+.icon-edit-btn,
+.icon-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.1s ease;
+  flex-shrink: 0;
+}
+.icon-edit-btn:active, .icon-delete-btn:active { transform: scale(0.92); }
+
+.icon-edit-btn {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.28);
+}
+.icon-edit-btn:hover { background: rgba(99, 102, 241, 0.35); }
+
+.icon-delete-btn {
+  background: rgba(239, 68, 68, 0.13);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+}
+.icon-delete-btn:hover { background: rgba(239, 68, 68, 0.28); }
+
+/* ================================================
+   MODAL: Header row with title + close button
+   ================================================ */
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.modal-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+  flex-shrink: 0;
+}
+.modal-close-btn:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+
 
 .obs-btn {
   display: inline-flex;
