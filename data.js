@@ -46,7 +46,7 @@ window.students = [
     "observations": [
       {
         "date": "2026-07-06 15:45",
-        "text": "Charlie is quiet in class but submits all assignments on time and with high quality."
+        "text": "Dhruv is quiet in class but submits all assignments on time and with high quality."
       }
     ]
   }
