@@ -15,7 +15,7 @@ window.GITHUB_CONFIG = {
 window.students = [
   {
     "id": 1,
-    "first_name": "Alice",
+    "first_name": "Tanmay",
     "id_number": "P1180654",
     "observations": [
       {
@@ -26,7 +26,7 @@ window.students = [
   },
   {
     "id": 2,
-    "first_name": "Bob",
+    "first_name": "Saalim",
     "id_number": "P1180656",
     "observations": [
       {
@@ -37,7 +37,7 @@ window.students = [
   },
   {
     "id": 3,
-    "first_name": "Charlie",
+    "first_name": "Dhruv",
     "id_number": "P1120765",
     "observations": [
       {
