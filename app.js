@@ -80,15 +80,24 @@ function showTeacherDashboard() {
   if (cfgOwner) cfgOwner.value = window.GITHUB_CONFIG.owner;
   if (cfgRepo) cfgRepo.value = window.GITHUB_CONFIG.repo;
 
+  // Set placeholder for token input if already saved in localStorage
+  const savedToken = localStorage.getItem("github_pat");
+  const tokenInput = document.getElementById("cfg-token");
+  if (savedToken && tokenInput) {
+    tokenInput.placeholder = "Configured (Enter new to overwrite)";
+  }
+
   checkGitHubConfig();
 }
 
 function checkGitHubConfig() {
   const config = window.GITHUB_CONFIG;
   const warning = document.getElementById("config-warning");
+  const savedToken = localStorage.getItem("github_pat");
+
   if (warning) {
-    if (config.owner === "YOUR_GITHUB_USERNAME" || config.repo === "YOUR_REPO_NAME" || config.token === "YOUR_GITHUB_PAT_HERE") {
-      warning.innerHTML = "Warning: Config values placeholder detected in data.js. Updates will not sync to GitHub.";
+    if (config.owner === "YOUR_GITHUB_USERNAME" || config.repo === "YOUR_REPO_NAME" || !savedToken) {
+      warning.innerHTML = "Warning: GitHub settings are incomplete. Please set Username, Repo, and PAT in the settings panel.";
       warning.style.display = "flex";
     } else {
       warning.style.display = "none";
@@ -298,24 +307,32 @@ async function updateGitHubSettings() {
     return;
   }
 
+  // Update in-memory configuration
   window.GITHUB_CONFIG.owner = owner;
   window.GITHUB_CONFIG.repo = repo;
 
+  // Save the token locally in the browser's localStorage
   if (rawToken !== "") {
-    if (rawToken.startsWith("github_pat_") || rawToken.startsWith("ghp_")) {
-      window.GITHUB_CONFIG.token = btoa(rawToken);
-    } else {
-      window.GITHUB_CONFIG.token = rawToken;
-    }
+    localStorage.setItem("github_pat", rawToken);
+  } else if (!localStorage.getItem("github_pat")) {
+    statusEl.className = "status-msg error";
+    statusEl.style.display = "flex";
+    statusEl.textContent = "Error: GitHub PAT Token is required.";
+    return;
   }
 
   try {
     await syncDatabase();
     statusEl.className = "status-msg success";
     statusEl.style.display = "flex";
-    statusEl.textContent = "Success: Config saved and synced!";
+    statusEl.textContent = "Success: Settings updated and synced!";
+    
     const tokenInput = document.getElementById("cfg-token");
-    if (tokenInput) tokenInput.value = "";
+    if (tokenInput) {
+      tokenInput.value = "";
+      tokenInput.placeholder = "Configured (Enter new to overwrite)";
+    }
+    
     checkGitHubConfig();
     setTimeout(() => { statusEl.style.display = "none"; }, 4000);
   } catch (error) {
@@ -334,6 +351,18 @@ async function syncDatabase() {
   }
 
   const config = window.GITHUB_CONFIG;
+  const token = localStorage.getItem("github_pat") || "";
+
+  if (!token) {
+    const errorMsg = "GitHub PAT Token is missing. Configure it in settings.";
+    if (statusEl) {
+      statusEl.className = "status-msg error";
+      statusEl.style.display = "flex";
+      statusEl.textContent = `Error: ${errorMsg}`;
+    }
+    throw new Error(errorMsg);
+  }
+
   if (config.owner.startsWith("YOUR_") || config.repo.startsWith("YOUR_")) {
     if (statusEl) {
       statusEl.className = "status-msg error";
@@ -344,13 +373,6 @@ async function syncDatabase() {
   }
 
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`;
-  
-  let token = "";
-  try {
-    token = atob(config.token);
-  } catch(e) {
-    token = config.token;
-  }
 
   try {
     const getResponse = await fetch(`${url}?ref=${config.branch}`, {
@@ -370,12 +392,15 @@ async function syncDatabase() {
       throw new Error(`Failed to fetch file metadata. Status: ${getResponse.status}`);
     }
 
+    // Safety check: Empty out the token before serializing so it is NEVER saved to public GitHub
+    const configToSave = { ...window.GITHUB_CONFIG, token: "" };
+
     const fileContent = `// Student Management System - Data Store
 // This file is read and written dynamically using the GitHub API.
 
 window.TEACHER_PASSWORD = ${JSON.stringify(window.TEACHER_PASSWORD, null, 2)};
 
-window.GITHUB_CONFIG = ${JSON.stringify(window.GITHUB_CONFIG, null, 2)};
+window.GITHUB_CONFIG = ${JSON.stringify(configToSave, null, 2)};
 
 window.students = ${JSON.stringify(localStudents, null, 2)};
 `;
