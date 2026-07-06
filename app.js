@@ -13,20 +13,54 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ==========================================
+// HELPER: Get token from localStorage only
+// ==========================================
+
+function getToken() {
+  return localStorage.getItem("aetheris_pat") || "";
+}
+
+function setToken(raw) {
+  // Store only in browser localStorage — NEVER written to GitHub
+  localStorage.setItem("aetheris_pat", raw);
+}
+
+// Build the data.js content for saving to GitHub — token fields are always EMPTY
+function buildDataJsContent() {
+  const safeConfig = {
+    token_part1: "",  // Never persisted to GitHub
+    token_part2: "",  // Never persisted to GitHub
+    owner: window.GITHUB_CONFIG.owner,
+    repo: window.GITHUB_CONFIG.repo,
+    branch: window.GITHUB_CONFIG.branch,
+    path: window.GITHUB_CONFIG.path
+  };
+
+  return `// Student Management System - Data Store
+// This file is read and written dynamically using the GitHub API.
+
+window.TEACHER_PASSWORD = ${JSON.stringify(window.TEACHER_PASSWORD, null, 2)};
+
+window.GITHUB_CONFIG = ${JSON.stringify(safeConfig, null, 2)};
+
+window.students = ${JSON.stringify(localStudents, null, 2)};
+`;
+}
+
+// ==========================================
 // 1. TEACHER PORTAL LOGIC
 // ==========================================
 
 function initTeacherPortal() {
   const isAuth = sessionStorage.getItem("teacher_auth") === "true";
   const loginContainer = document.getElementById("login-container");
-  
+
   if (isAuth) {
     showTeacherDashboard();
   } else if (loginContainer) {
     loginContainer.style.display = "block";
   }
 
-  // Login handler
   const loginForm = document.getElementById("login-form");
   if (loginForm) {
     loginForm.addEventListener("submit", (e) => {
@@ -45,18 +79,13 @@ function initTeacherPortal() {
     });
   }
 
-  // Search input handler
   const searchBar = document.getElementById("search-bar");
   if (searchBar) {
     searchBar.addEventListener("input", (e) => {
       const query = e.target.value.toLowerCase().trim();
       filterStudents(query);
-
-      // Auto-select if search query matches a student's first name exactly
       const exactMatch = localStudents.find(s => s.first_name.toLowerCase() === query);
-      if (exactMatch) {
-        selectStudent(exactMatch.id);
-      }
+      if (exactMatch) selectStudent(exactMatch.id);
     });
   }
 }
@@ -69,22 +98,17 @@ function showTeacherDashboard() {
   if (loginContainer) loginContainer.style.display = "none";
   if (navHeader) navHeader.style.display = "flex";
   if (dbContainer) dbContainer.style.display = "grid";
-  
-  // Load database
+
   localStudents = [...window.students];
   renderStudentList();
-  
-  // Pre-fill configuration form fields
+
   const cfgOwner = document.getElementById("cfg-owner");
   const cfgRepo = document.getElementById("cfg-repo");
   if (cfgOwner) cfgOwner.value = window.GITHUB_CONFIG.owner;
   if (cfgRepo) cfgRepo.value = window.GITHUB_CONFIG.repo;
 
-  // Set placeholder for token input if already configured in GITHUB_CONFIG or localStorage
-  const config = window.GITHUB_CONFIG;
-  const savedToken = localStorage.getItem("github_pat") || (config.token_part1 && config.token_part2);
   const tokenInput = document.getElementById("cfg-token");
-  if (savedToken && tokenInput) {
+  if (getToken() && tokenInput) {
     tokenInput.placeholder = "Configured (Enter new to overwrite)";
   }
 
@@ -94,11 +118,11 @@ function showTeacherDashboard() {
 function checkGitHubConfig() {
   const config = window.GITHUB_CONFIG;
   const warning = document.getElementById("config-warning");
-  const hasToken = (config.token_part1 && config.token_part2) || localStorage.getItem("github_pat");
+  const hasToken = !!getToken();
 
   if (warning) {
-    if (config.owner === "YOUR_GITHUB_USERNAME" || config.repo === "YOUR_REPO_NAME" || !hasToken) {
-      warning.innerHTML = "Warning: GitHub settings are incomplete. Please set Username, Repo, and PAT in the settings panel.";
+    if (!hasToken) {
+      warning.innerHTML = "Action required: Enter your GitHub PAT Token in the settings panel below and click Update & Sync Config.";
       warning.style.display = "flex";
     } else {
       warning.style.display = "none";
@@ -117,13 +141,12 @@ function renderStudentList() {
   const listEl = document.getElementById("student-list");
   if (!listEl) return;
   listEl.innerHTML = "";
-  
+
   localStudents.forEach(student => {
     const li = document.createElement("li");
-    li.className = `student-item ${selectedStudentId === student.id ? 'active' : ''}`;
+    li.className = `student-item ${selectedStudentId === student.id ? "active" : ""}`;
     li.setAttribute("data-id", student.id);
     li.onclick = () => selectStudent(student.id);
-    
     li.innerHTML = `
       <span class="name">${student.first_name}</span>
       <span class="id-num">${student.id_number}</span>
@@ -133,21 +156,15 @@ function renderStudentList() {
 }
 
 function filterStudents(query) {
-  const items = document.querySelectorAll(".student-item");
-  items.forEach(item => {
+  document.querySelectorAll(".student-item").forEach(item => {
     const name = item.querySelector(".name").textContent.toLowerCase();
-    if (name.includes(query)) {
-      item.style.display = "flex";
-    } else {
-      item.style.display = "none";
-    }
+    item.style.display = name.includes(query) ? "flex" : "none";
   });
 }
 
 function selectStudent(id) {
   selectedStudentId = id;
-  
-  // Mark active in sidebar
+
   document.querySelectorAll(".student-item").forEach(item => {
     if (parseInt(item.getAttribute("data-id")) === id) {
       item.classList.add("active");
@@ -160,21 +177,21 @@ function selectStudent(id) {
   if (student) {
     ensureObservationsArray(student);
 
-    const noSelectionPanel = document.getElementById("no-selection-panel");
-    const detailPanel = document.getElementById("student-detail-panel");
+    const noSel = document.getElementById("no-selection-panel");
+    const detail = document.getElementById("student-detail-panel");
+    if (noSel) noSel.style.display = "none";
+    if (detail) detail.style.display = "block";
+
     const sName = document.getElementById("student-name");
     const sId = document.getElementById("student-id");
-
-    if (noSelectionPanel) noSelectionPanel.style.display = "none";
-    if (detailPanel) detailPanel.style.display = "block";
     if (sName) sName.textContent = student.first_name;
     if (sId) sId.textContent = student.id_number;
-    
+
     renderObservationHistory(student);
 
     const textInput = document.getElementById("new-observation-text");
     if (textInput) textInput.value = "";
-    
+
     const statusEl = document.getElementById("save-status");
     if (statusEl) statusEl.style.display = "none";
   }
@@ -184,36 +201,30 @@ function ensureObservationsArray(student) {
   if (!student.observations) {
     student.observations = [];
     if (student.notes && student.notes.trim() !== "") {
-      student.observations.push({
-        date: "LEGACY NOTE",
-        text: student.notes
-      });
+      student.observations.push({ date: "Previous Note", text: student.notes });
       delete student.notes;
     }
   }
 }
 
 function renderObservationHistory(student) {
-  const historyListEl = document.getElementById("observations-history-list");
-  if (!historyListEl) return;
-  historyListEl.innerHTML = "";
+  const el = document.getElementById("observations-history-list");
+  if (!el) return;
+  el.innerHTML = "";
 
   if (student.observations.length === 0) {
-    historyListEl.innerHTML = `<div style="color: var(--text-muted); font-style: italic; padding: 1rem 0;">No observations recorded yet.</div>`;
+    el.innerHTML = `<div style="color:var(--text-muted);font-style:italic;padding:1rem 0;">No observations recorded yet.</div>`;
     return;
   }
 
   student.observations.forEach(obs => {
     const card = document.createElement("div");
     card.className = "observation-card";
-    card.innerHTML = `
-      <div class="observation-date">${obs.date}</div>
-      <div class="observation-text">${obs.text}</div>
-    `;
-    historyListEl.appendChild(card);
+    card.innerHTML = `<div class="observation-date">${obs.date}</div><div class="observation-text">${obs.text}</div>`;
+    el.appendChild(card);
   });
 
-  historyListEl.scrollTop = historyListEl.scrollHeight;
+  el.scrollTop = el.scrollHeight;
 }
 
 function showAddStudentModal() {
@@ -234,28 +245,18 @@ function handleAddStudent(e) {
   const id_number = document.getElementById("new-id-number").value.trim();
   const initialObs = document.getElementById("new-initial-observation").value.trim();
 
-  // Validate ID uniqueness
-  const exists = localStudents.some(s => s.id_number.toLowerCase() === id_number.toLowerCase());
-  if (exists) {
+  if (localStudents.some(s => s.id_number.toLowerCase() === id_number.toLowerCase())) {
     alert("A student with this ID number already exists!");
     return;
   }
 
   const newId = localStudents.length > 0 ? Math.max(...localStudents.map(s => s.id)) + 1 : 1;
-  const newStudent = { 
-    id: newId, 
-    first_name, 
-    id_number,
-    observations: [] 
-  };
+  const newStudent = { id: newId, first_name, id_number, observations: [] };
 
   if (initialObs !== "") {
-    newStudent.observations.push({
-      date: new Date().toLocaleString(),
-      text: initialObs
-    });
+    newStudent.observations.push({ date: new Date().toLocaleString(), text: initialObs });
   }
-  
+
   localStudents.push(newStudent);
   renderStudentList();
   closeAddStudentModal();
@@ -278,12 +279,7 @@ function addNewObservation() {
   const student = localStudents.find(s => s.id === selectedStudentId);
   if (student) {
     ensureObservationsArray(student);
-    
-    student.observations.push({
-      date: new Date().toLocaleString(),
-      text: textVal
-    });
-
+    student.observations.push({ date: new Date().toLocaleString(), text: textVal });
     textInput.value = "";
     renderObservationHistory(student);
     syncDatabase();
@@ -299,56 +295,50 @@ async function updateGitHubSettings() {
   if (!statusEl) return;
   statusEl.className = "status-msg info";
   statusEl.style.display = "flex";
-  statusEl.textContent = "Updating config & syncing file...";
+  statusEl.textContent = "Saving settings...";
 
   if (!owner || !repo) {
     statusEl.className = "status-msg error";
-    statusEl.style.display = "flex";
     statusEl.textContent = "Error: Username and Repo Name are required.";
     return;
   }
 
-  // Update in-memory configuration
   window.GITHUB_CONFIG.owner = owner;
   window.GITHUB_CONFIG.repo = repo;
 
-  // Split and save token in base64 split parts if entered
+  // Save token ONLY to localStorage — never to the file
   if (rawToken !== "") {
-    if (rawToken.startsWith("github_pat_") || rawToken.startsWith("ghp_")) {
-      // Split the prefix to ensure "github_pat_" is never written in plaintext or simple contiguous base64
-      if (rawToken.startsWith("github_pat_")) {
-        window.GITHUB_CONFIG.token_part1 = btoa("github");
-        window.GITHUB_CONFIG.token_part2 = btoa(rawToken.substring(6));
-      } else {
-        window.GITHUB_CONFIG.token_part1 = btoa("ghp");
-        window.GITHUB_CONFIG.token_part2 = btoa(rawToken.substring(3));
-      }
-    } else {
-      window.GITHUB_CONFIG.token_part1 = btoa(rawToken);
-      window.GITHUB_CONFIG.token_part2 = "";
-    }
+    setToken(rawToken);
+  }
+
+  if (!getToken()) {
+    statusEl.className = "status-msg error";
+    statusEl.textContent = "Error: GitHub PAT Token is required.";
+    return;
   }
 
   try {
     await syncDatabase();
     statusEl.className = "status-msg success";
-    statusEl.style.display = "flex";
-    statusEl.textContent = "Success: Settings updated and synced!";
-    
+    statusEl.textContent = "Success: Settings saved! Token stored in browser only.";
+
     const tokenInput = document.getElementById("cfg-token");
     if (tokenInput) {
       tokenInput.value = "";
       tokenInput.placeholder = "Configured (Enter new to overwrite)";
     }
-    
+
     checkGitHubConfig();
-    setTimeout(() => { statusEl.style.display = "none"; }, 4000);
+    setTimeout(() => { statusEl.style.display = "none"; }, 5000);
   } catch (error) {
     statusEl.className = "status-msg error";
-    statusEl.style.display = "flex";
     statusEl.textContent = `Error: ${error.message}`;
   }
 }
+
+// ==========================================
+// GITHUB SYNC — Token NEVER written to file
+// ==========================================
 
 async function syncDatabase() {
   const statusEl = document.getElementById("save-status");
@@ -359,88 +349,39 @@ async function syncDatabase() {
   }
 
   const config = window.GITHUB_CONFIG;
-  
-  // Reconstruct token from base64 parts
-  let token = "";
-  if (config.token_part1 && config.token_part2) {
-    try {
-      token = atob(config.token_part1) + atob(config.token_part2);
-    } catch(e) {
-      token = config.token_part1 + config.token_part2;
-    }
-  } else {
-    token = localStorage.getItem("github_pat") || "";
-  }
+  const token = getToken();
 
   if (!token) {
-    const errorMsg = "GitHub PAT Token is missing. Configure it in settings.";
-    if (statusEl) {
-      statusEl.className = "status-msg error";
-      statusEl.style.display = "flex";
-      statusEl.textContent = `Error: ${errorMsg}`;
-    }
-    throw new Error(errorMsg);
-  }
-
-  if (config.owner.startsWith("YOUR_") || config.repo.startsWith("YOUR_")) {
-    if (statusEl) {
-      statusEl.className = "status-msg error";
-      statusEl.style.display = "flex";
-      statusEl.textContent = "Error: Config placeholders detected in data.js. Configure GitHub info to save.";
-    }
-    throw new Error("Missing config credentials.");
+    const msg = "GitHub PAT Token is missing. Enter it in the settings panel.";
+    if (statusEl) { statusEl.className = "status-msg error"; statusEl.style.display = "flex"; statusEl.textContent = `Error: ${msg}`; }
+    throw new Error(msg);
   }
 
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`;
 
   try {
     const getResponse = await fetch(`${url}?ref=${config.branch}`, {
-      headers: {
-        "Authorization": `token ${token}`,
-        "Accept": "application/vnd.github.v3+json"
-      }
+      headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
     });
 
     let sha = null;
     if (getResponse.ok) {
-      const fileData = await getResponse.json();
-      sha = fileData.sha;
-    } else if (getResponse.status === 404) {
-      sha = null;
-    } else {
+      sha = (await getResponse.json()).sha;
+    } else if (getResponse.status !== 404) {
       throw new Error(`Failed to fetch file metadata. Status: ${getResponse.status}`);
     }
 
-    // We save GITHUB_CONFIG with split token parts so GitHub scanners do not block it
-    const fileContent = `// Student Management System - Data Store
-// This file is read and written dynamically using the GitHub API.
-
-window.TEACHER_PASSWORD = ${JSON.stringify(window.TEACHER_PASSWORD, null, 2)};
-
-window.GITHUB_CONFIG = ${JSON.stringify(window.GITHUB_CONFIG, null, 2)};
-
-window.students = ${JSON.stringify(localStudents, null, 2)};
-`;
-
+    // Build the content to commit — token fields are ALWAYS empty in the file
+    const fileContent = buildDataJsContent();
     const utf8Bytes = new TextEncoder().encode(fileContent);
     const base64Content = btoa(String.fromCharCode(...utf8Bytes));
 
-    const putBody = {
-      message: `Update student database (Aetheris CMS)`,
-      content: base64Content,
-      branch: config.branch
-    };
-    if (sha) {
-      putBody.sha = sha;
-    }
+    const putBody = { message: "Update student database (Aetheris CMS)", content: base64Content, branch: config.branch };
+    if (sha) putBody.sha = sha;
 
     const putResponse = await fetch(url, {
       method: "PUT",
-      headers: {
-        "Authorization": `token ${token}`,
-        "Content-Type": "application/json",
-        "Accept": "application/vnd.github.v3+json"
-      },
+      headers: { "Authorization": `token ${token}`, "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json" },
       body: JSON.stringify(putBody)
     });
 
@@ -449,21 +390,12 @@ window.students = ${JSON.stringify(localStudents, null, 2)};
       throw new Error(errBody.message || "Failed to write file back to GitHub.");
     }
 
-    if (statusEl) {
-      statusEl.className = "status-msg success";
-      statusEl.style.display = "flex";
-      statusEl.textContent = "Success: Saved and Synced to GitHub!";
-    }
-    
+    if (statusEl) { statusEl.className = "status-msg success"; statusEl.style.display = "flex"; statusEl.textContent = "Success: Saved and Synced to GitHub!"; }
     window.students = [...localStudents];
 
   } catch (error) {
     console.error("GitHub Sync Error:", error);
-    if (statusEl) {
-      statusEl.className = "status-msg error";
-      statusEl.style.display = "flex";
-      statusEl.textContent = `Error: ${error.message}`;
-    }
+    if (statusEl) { statusEl.className = "status-msg error"; statusEl.style.display = "flex"; statusEl.textContent = `Error: ${error.message}`; }
     throw error;
   }
 }
@@ -490,8 +422,8 @@ function initParentPortal() {
       const username = document.getElementById("parent-username").value.trim().toLowerCase();
       const password = document.getElementById("parent-password").value.trim();
 
-      const student = window.students.find(s => 
-        s.first_name.toLowerCase() === username && 
+      const student = window.students.find(s =>
+        s.first_name.toLowerCase() === username &&
         s.id_number.toLowerCase() === password.toLowerCase()
       );
 
@@ -501,10 +433,7 @@ function initParentPortal() {
         showParentDashboard(student.id);
       } else {
         const err = document.getElementById("login-error");
-        if (err) {
-          err.style.display = "flex";
-          setTimeout(() => err.style.display = "none", 4000);
-        }
+        if (err) { err.style.display = "flex"; setTimeout(() => err.style.display = "none", 4000); }
       }
     });
   }
@@ -512,48 +441,38 @@ function initParentPortal() {
 
 function showParentDashboard(studentId) {
   const student = window.students.find(s => s.id === studentId);
-  if (!student) {
-    logout();
-    return;
-  }
+  if (!student) { logout(); return; }
 
   const loginContainer = document.getElementById("login-container");
   const dbContainer = document.getElementById("dashboard-container");
-  const childName = document.getElementById("child-name");
-  const childId = document.getElementById("child-id");
-  const notesEl = document.getElementById("notes-content");
-
   if (loginContainer) loginContainer.style.display = "none";
   if (dbContainer) dbContainer.style.display = "block";
 
+  const childName = document.getElementById("child-name");
+  const childId = document.getElementById("child-id");
+  const notesEl = document.getElementById("notes-content");
   if (childName) childName.textContent = student.first_name;
   if (childId) childId.textContent = student.id_number;
-  
+
   if (notesEl) {
     notesEl.innerHTML = "";
-
     let observations = student.observations || [];
     if (observations.length === 0 && student.notes && student.notes.trim() !== "") {
-      observations = [{ date: "LEGACY NOTE", text: student.notes }];
+      observations = [{ date: "Previous Note", text: student.notes }];
     }
 
     if (observations.length === 0) {
-      notesEl.innerHTML = `<div class="notes-display-box" style="display: flex; align-items: center; justify-content: center;"><em style="color: var(--text-muted);">No observations have been recorded for your child yet.</em></div>`;
+      notesEl.innerHTML = `<div class="notes-display-box" style="display:flex;align-items:center;justify-content:center;"><em style="color:var(--text-muted);">No observations have been recorded for your child yet.</em></div>`;
     } else {
       const historyDiv = document.createElement("div");
       historyDiv.className = "observations-history";
       historyDiv.style.maxHeight = "400px";
-
       observations.forEach(obs => {
         const card = document.createElement("div");
         card.className = "observation-card";
-        card.innerHTML = `
-          <div class="observation-date">${obs.date}</div>
-          <div class="observation-text">${obs.text}</div>
-        `;
+        card.innerHTML = `<div class="observation-date">${obs.date}</div><div class="observation-text">${obs.text}</div>`;
         historyDiv.appendChild(card);
       });
-
       notesEl.appendChild(historyDiv);
       historyDiv.scrollTop = historyDiv.scrollHeight;
     }

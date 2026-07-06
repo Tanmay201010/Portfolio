@@ -4,9 +4,8 @@
 window.TEACHER_PASSWORD = "teacher123";
 
 window.GITHUB_CONFIG = {
-  // Stored in separate base64 parts to completely bypass GitHub's secret detection scan
-  token_part1: "Z2l0aHVi",
-  token_part2: "X3BhdF8xMUJCUDdXQ1kwNHB6Y2ZvZlNKMUw0XzEzWW1manpBVk1ZU2hJU1lSVkZEeGRZWkZ4Ums4aDdwRHBmbWhEbEd5Y0pNU09MMkNOTXJGOUtHb2JN",
+  token_part1: "",   // Token is NOT stored here. Enter it once in the Teacher Portal sidebar.
+  token_part2: "",   // It is stored privately in your browser's localStorage only.
   owner: "Tanmay201010",
   repo: "Portfolio",
   branch: "main",
