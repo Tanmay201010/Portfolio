@@ -6,7 +6,7 @@ window.TEACHER_PASSWORD = "teacher123";
 window.GITHUB_CONFIG = {
   token: "Z2l0aHViX3BhdF8xMUJCUDdXQ1kwMUQ0RnFPUzVKa3lxX2Iza2pCMTJ5ZUN0QTVhcHMzck5Xa2RYdE15ZmFDWG5takZ1ME1JcHE3RWZTWVJJWklDN2VGZTV6UTlh", // Base64 encoded token to prevent auto-revocation by GitHub scan
   owner: "Tanmay201010", // Update this to your exact GitHub Username
-  repo: "portfolio",  // Update this to your exact GitHub repository name
+  repo: "Portfolio",  // Update this to your exact GitHub repository name
   branch: "main",      // Update if your default branch is different (e.g. "master")
   path: "data.js"      // Do not change unless the file name changes
 };
