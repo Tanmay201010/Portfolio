@@ -24,7 +24,7 @@
         <input type="password" id="password" required placeholder="••••••••">
       </div>
       <button type="submit" class="btn btn-primary" id="btn-login-submit">Login</button>
-      <div id="login-error" class="status-msg error">Error: Invalid Password</div>
+      <div id="login-error" class="status-msg error" style="display: none;">Error: Invalid Password</div>
     </form>
     <div style="margin-top: 1.5rem; text-align: center;">
       <a href="index.html" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">← Back to Selector</a>
@@ -86,7 +86,7 @@
           <button id="btn-save-notes" class="btn btn-primary" onclick="addNewObservation()" style="max-width: 250px;">
             Save Observation
           </button>
-          <span id="save-status" class="status-msg" style="margin-top: 0; padding: 0.5rem 1rem;"></span>
+          <span id="save-status" class="status-msg" style="display: none; margin-top: 0; padding: 0.5rem 1rem;"></span>
         </div>
       </div>
 
@@ -100,7 +100,7 @@
       </div>
 
       <!-- Config Warning Status (If repo settings not set) -->
-      <div id="config-warning" class="status-msg error" style="margin-top: 1rem; justify-content: center;">
+      <div id="config-warning" class="status-msg error" style="display: none; margin-top: 1rem; justify-content: center;">
         Warning: Please check config. Ensure owner and repository are correct in data.js.
       </div>
     </section>
@@ -157,8 +157,8 @@
           showDashboard();
         } else {
           const err = document.getElementById("login-error");
-          err.classList.add("visible");
-          setTimeout(() => err.classList.remove("visible"), 3000);
+          err.style.display = "flex";
+          setTimeout(() => err.style.display = "none", 3000);
         }
       });
 
@@ -193,9 +193,9 @@
       const warning = document.getElementById("config-warning");
       if (config.owner === "YOUR_GITHUB_USERNAME" || config.repo === "YOUR_REPO_NAME" || config.token === "YOUR_GITHUB_PAT_HERE") {
         warning.innerHTML = "Warning: Config values placeholder detected in data.js. Updates will not sync to GitHub.";
-        warning.classList.add("visible");
+        warning.style.display = "flex";
       } else {
-        warning.classList.remove("visible");
+        warning.style.display = "none";
       }
     }
 
@@ -267,7 +267,7 @@
         
         // Clear previous save message status
         const statusEl = document.getElementById("save-status");
-        statusEl.classList.remove("visible");
+        statusEl.style.display = "none";
       }
     }
 
@@ -399,14 +399,16 @@
     // Save changes and update data.js on GitHub
     async function syncDatabase() {
       const statusEl = document.getElementById("save-status");
-      statusEl.className = "status-msg info visible";
+      statusEl.className = "status-msg info";
+      statusEl.style.display = "flex";
       statusEl.innerHTML = `<span class="spinner"></span> Syncing with GitHub...`;
 
       const config = window.GITHUB_CONFIG;
       
       // Check if config has been modified from placeholder
       if (config.owner.startsWith("YOUR_") || config.repo.startsWith("YOUR_")) {
-        statusEl.className = "status-msg error visible";
+        statusEl.className = "status-msg error";
+        statusEl.style.display = "flex";
         statusEl.textContent = "Error: Config placeholders detected in data.js. Configure GitHub info to save.";
         return;
       }
@@ -475,7 +477,8 @@ window.students = ${JSON.stringify(localStudents, null, 2)};
         }
 
         // Successfully updated!
-        statusEl.className = "status-msg success visible";
+        statusEl.className = "status-msg success";
+        statusEl.style.display = "flex";
         statusEl.textContent = "Success: Saved and Synced to GitHub!";
         
         // Update the global state
@@ -483,7 +486,8 @@ window.students = ${JSON.stringify(localStudents, null, 2)};
 
       } catch (error) {
         console.error("GitHub Sync Error:", error);
-        statusEl.className = "status-msg error visible";
+        statusEl.className = "status-msg error";
+        statusEl.style.display = "flex";
         statusEl.textContent = `Error: ${error.message}`;
       }
     }

@@ -28,7 +28,7 @@
         <input type="password" id="parent-password" required placeholder="e.g. STU-001">
       </div>
       <button type="submit" class="btn btn-primary" id="btn-parent-login">Sign In</button>
-      <div id="login-error" class="status-msg error">Error: Invalid student name or ID number</div>
+      <div id="login-error" class="status-msg error" style="display: none;">Error: Invalid student name or ID number</div>
     </form>
     <div style="margin-top: 1.5rem; text-align: center;">
       <a href="index.html" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">← Back to Selector</a>
@@ -93,8 +93,8 @@
           showDashboard(student.id);
         } else {
           const err = document.getElementById("login-error");
-          err.classList.add("visible");
-          setTimeout(() => err.classList.remove("visible"), 4000);
+          err.style.display = "flex";
+          setTimeout(() => err.style.display = "none", 4000);
         }
       });
     });
@@ -128,7 +128,7 @@
       } else {
         const historyDiv = document.createElement("div");
         historyDiv.className = "observations-history";
-        historyDiv.style.maxHeight = "400px"; // Give parents a taller view of their child's timeline
+        historyDiv.style.maxHeight = "400px";
 
         observations.forEach(obs => {
           const card = document.createElement("div");
