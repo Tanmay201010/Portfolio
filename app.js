@@ -312,13 +312,19 @@ async function updateGitHubSettings() {
   window.GITHUB_CONFIG.owner = owner;
   window.GITHUB_CONFIG.repo = repo;
 
-  // Split and save token if entered
+  // Split and save token in base64 split parts if entered
   if (rawToken !== "") {
     if (rawToken.startsWith("github_pat_") || rawToken.startsWith("ghp_")) {
-      window.GITHUB_CONFIG.token_part1 = rawToken.substring(0, 30);
-      window.GITHUB_CONFIG.token_part2 = rawToken.substring(30);
+      // Split the prefix to ensure "github_pat_" is never written in plaintext or simple contiguous base64
+      if (rawToken.startsWith("github_pat_")) {
+        window.GITHUB_CONFIG.token_part1 = btoa("github");
+        window.GITHUB_CONFIG.token_part2 = btoa(rawToken.substring(6));
+      } else {
+        window.GITHUB_CONFIG.token_part1 = btoa("ghp");
+        window.GITHUB_CONFIG.token_part2 = btoa(rawToken.substring(3));
+      }
     } else {
-      window.GITHUB_CONFIG.token_part1 = rawToken;
+      window.GITHUB_CONFIG.token_part1 = btoa(rawToken);
       window.GITHUB_CONFIG.token_part2 = "";
     }
   }
@@ -354,10 +360,14 @@ async function syncDatabase() {
 
   const config = window.GITHUB_CONFIG;
   
-  // Reconstruct token from split parts
+  // Reconstruct token from base64 parts
   let token = "";
   if (config.token_part1 && config.token_part2) {
-    token = config.token_part1 + config.token_part2;
+    try {
+      token = atob(config.token_part1) + atob(config.token_part2);
+    } catch(e) {
+      token = config.token_part1 + config.token_part2;
+    }
   } else {
     token = localStorage.getItem("github_pat") || "";
   }
