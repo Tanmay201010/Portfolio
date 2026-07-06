@@ -21,6 +21,10 @@ window.students = [
       {
         "date": "2026-07-06 14:30",
         "text": "Alice is doing exceptionally well in class activities and shows great progress."
+      },
+      {
+        "date": "7/6/2026, 10:43:13 PM",
+        "text": "asdasd"
       }
     ]
   },
@@ -42,7 +46,7 @@ window.students = [
     "observations": [
       {
         "date": "2026-07-06 15:45",
-        "text": "Charlie is quiet in class but submits all assignments on time and with high quasd"
+        "text": "Charlie is quiet in class but submits all assignments on time and with high quality."
       }
     ]
   }
