@@ -21,10 +21,6 @@ window.students = [
       {
         "date": "2026-07-06 14:30",
         "text": "Tanmay is doing exceptionally well in class activities and shows great interest ."
-      },
-      {
-        "date": "7/6/2026, 10:54:00 PM",
-        "text": "asd"
       }
     ]
   },
