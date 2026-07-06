@@ -28,7 +28,7 @@
         <input type="password" id="parent-password" required placeholder="e.g. STU-001">
       </div>
       <button type="submit" class="btn btn-primary" id="btn-parent-login">Sign In</button>
-      <div id="login-error" class="status-msg error">❌ Invalid student name or ID number</div>
+      <div id="login-error" class="status-msg error">Error: Invalid student name or ID number</div>
     </form>
     <div style="margin-top: 1.5rem; text-align: center;">
       <a href="index.html" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">← Back to Selector</a>
@@ -52,14 +52,14 @@
       </div>
 
       <div class="form-group">
-        <label style="margin-bottom: 0.8rem; font-size: 0.9rem;">Teacher Comments & Feedback</label>
-        <div id="notes-content" class="notes-display-box">
+        <label style="margin-bottom: 0.8rem; font-size: 0.9rem;">Teacher Comments & Feedback History</label>
+        <div id="notes-content">
           <!-- Child observations rendered here -->
         </div>
       </div>
 
       <div style="margin-top: 2rem; color: var(--text-muted); font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; border-top: 1px solid var(--glass-border); padding-top: 1.5rem;">
-        <span>🔒 Secure private access. Only you can view this student's records.</span>
+        <span>Secure private access. Only you can view this student's records.</span>
       </div>
     </div>
   </div>
@@ -84,7 +84,7 @@
         // AUTHENTICATION RULE: first_name (case-insensitive) and id_number matches
         const student = window.students.find(s => 
           s.first_name.toLowerCase() === username && 
-          s.id_number.toLowerCase() === password.toLowerCase() // Case insensitive ID is safer, but matches exact ID structure
+          s.id_number.toLowerCase() === password.toLowerCase()
         );
 
         if (student) {
@@ -93,8 +93,8 @@
           showDashboard(student.id);
         } else {
           const err = document.getElementById("login-error");
-          err.style.display = "flex";
-          setTimeout(() => err.style.display = "none", 4000);
+          err.classList.add("visible");
+          setTimeout(() => err.classList.remove("visible"), 4000);
         }
       });
     });
@@ -102,7 +102,6 @@
     function showDashboard(studentId) {
       const student = window.students.find(s => s.id === studentId);
       if (!student) {
-        // Fallback if student ID not found in data
         logout();
         return;
       }
@@ -116,10 +115,35 @@
       document.getElementById("child-id").textContent = student.id_number;
       
       const notesEl = document.getElementById("notes-content");
-      if (student.notes && student.notes.trim() !== "") {
-        notesEl.textContent = student.notes;
+      notesEl.innerHTML = "";
+
+      // Support legacy 'notes' string structure or new 'observations' array
+      let observations = student.observations || [];
+      if (observations.length === 0 && student.notes && student.notes.trim() !== "") {
+        observations = [{ date: "LEGACY NOTE", text: student.notes }];
+      }
+
+      if (observations.length === 0) {
+        notesEl.innerHTML = `<div class="notes-display-box" style="display: flex; align-items: center; justify-content: center;"><em style="color: var(--text-muted);">No observations have been recorded for your child yet.</em></div>`;
       } else {
-        notesEl.innerHTML = `<em style="color: var(--text-muted);">No observations have been recorded for your child yet.</em>`;
+        const historyDiv = document.createElement("div");
+        historyDiv.className = "observations-history";
+        historyDiv.style.maxHeight = "400px"; // Give parents a taller view of their child's timeline
+
+        observations.forEach(obs => {
+          const card = document.createElement("div");
+          card.className = "observation-card";
+          card.innerHTML = `
+            <div class="observation-date">${obs.date}</div>
+            <div class="observation-text">${obs.text}</div>
+          `;
+          historyDiv.appendChild(card);
+        });
+
+        notesEl.appendChild(historyDiv);
+        
+        // Scroll to the latest observation
+        historyDiv.scrollTop = historyDiv.scrollHeight;
       }
     }
 

@@ -24,7 +24,7 @@
         <input type="password" id="password" required placeholder="••••••••">
       </div>
       <button type="submit" class="btn btn-primary" id="btn-login-submit">Login</button>
-      <div id="login-error" class="status-msg error">❌ Invalid Password</div>
+      <div id="login-error" class="status-msg error">Error: Invalid Password</div>
     </form>
     <div style="margin-top: 1.5rem; text-align: center;">
       <a href="index.html" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">← Back to Selector</a>
@@ -68,14 +68,23 @@
           </div>
         </div>
 
+        <!-- Past Observations List -->
+        <div>
+          <label style="margin-bottom: 0.5rem; display: block;">Observation History</label>
+          <div id="observations-history-list" class="observations-history">
+            <!-- Dynamically rendered observation cards -->
+          </div>
+        </div>
+
+        <!-- Add New Observation Form -->
         <div class="form-group" style="flex: 1;">
-          <label for="student-notes">Observation & Performance Notes</label>
-          <textarea id="student-notes" placeholder="Write thoughts, feedback, or observations about this student..."></textarea>
+          <label for="new-observation-text">New Observation</label>
+          <textarea id="new-observation-text" placeholder="Write a new observation entry..."></textarea>
         </div>
 
         <div style="display: flex; gap: 1rem; align-items: center;">
-          <button id="btn-save-notes" class="btn btn-primary" onclick="saveNotes()" style="max-width: 200px;">
-            Save Observations
+          <button id="btn-save-notes" class="btn btn-primary" onclick="addNewObservation()" style="max-width: 250px;">
+            Save Observation
           </button>
           <span id="save-status" class="status-msg" style="margin-top: 0; padding: 0.5rem 1rem;"></span>
         </div>
@@ -83,14 +92,16 @@
 
       <!-- No Selection State -->
       <div id="no-selection-panel" class="no-selection">
-        <div class="no-selection-icon">👨‍🎓</div>
+        <div class="no-selection-icon">
+          <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; color: var(--text-muted)"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+        </div>
         <h2>No Student Selected</h2>
-        <p>Use the live search bar or select a student from the sidebar to view/edit profile notes.</p>
+        <p>Use the live search bar or select a student from the sidebar to view observation history.</p>
       </div>
 
       <!-- Config Warning Status (If repo settings not set) -->
-      <div id="config-warning" class="status-msg error" style="margin-top: 1rem; justify-content: center; display: none;">
-        ⚠️ Please check config: Ensure owner and repository are correct in data.js.
+      <div id="config-warning" class="status-msg error" style="margin-top: 1rem; justify-content: center;">
+        Warning: Please check config. Ensure owner and repository are correct in data.js.
       </div>
     </section>
   </main>
@@ -111,8 +122,8 @@
           <input type="text" id="new-id-number" required placeholder="e.g. STU-004">
         </div>
         <div class="form-group">
-          <label for="new-notes">Initial Observations (Optional)</label>
-          <textarea id="new-notes" placeholder="Any initial observations..."></textarea>
+          <label for="new-initial-observation">Initial Observation (Optional)</label>
+          <textarea id="new-initial-observation" placeholder="Any initial observations..."></textarea>
         </div>
         
         <div style="display: flex; gap: 1rem; margin-top: 2rem;">
@@ -146,8 +157,8 @@
           showDashboard();
         } else {
           const err = document.getElementById("login-error");
-          err.style.display = "flex";
-          setTimeout(() => err.style.display = "none", 3000);
+          err.classList.add("visible");
+          setTimeout(() => err.classList.remove("visible"), 3000);
         }
       });
 
@@ -179,10 +190,12 @@
 
     function checkGitHubConfig() {
       const config = window.GITHUB_CONFIG;
+      const warning = document.getElementById("config-warning");
       if (config.owner === "YOUR_GITHUB_USERNAME" || config.repo === "YOUR_REPO_NAME" || config.token === "YOUR_GITHUB_PAT_HERE") {
-        const warning = document.getElementById("config-warning");
-        warning.innerHTML = "⚠️ Config values placeholder detected in data.js. Updates will not sync to GitHub.";
-        warning.style.display = "flex";
+        warning.innerHTML = "Warning: Config values placeholder detected in data.js. Updates will not sync to GitHub.";
+        warning.classList.add("visible");
+      } else {
+        warning.classList.remove("visible");
       }
     }
 
@@ -238,16 +251,64 @@
 
       const student = localStudents.find(s => s.id === id);
       if (student) {
+        // Upgrade legacy structure if necessary
+        ensureObservationsArray(student);
+
         document.getElementById("no-selection-panel").style.display = "none";
         document.getElementById("student-detail-panel").style.display = "block";
         document.getElementById("student-name").textContent = student.first_name;
         document.getElementById("student-id").textContent = student.id_number;
-        document.getElementById("student-notes").value = student.notes || "";
+        
+        // Render Observation History
+        renderObservationHistory(student);
+
+        // Clear input area
+        document.getElementById("new-observation-text").value = "";
         
         // Clear previous save message status
         const statusEl = document.getElementById("save-status");
-        statusEl.style.display = "none";
+        statusEl.classList.remove("visible");
       }
+    }
+
+    // Helper to migrate legacy 'notes' field to 'observations' list
+    function ensureObservationsArray(student) {
+      if (!student.observations) {
+        student.observations = [];
+        if (student.notes && student.notes.trim() !== "") {
+          student.observations.push({
+            date: "LEGACY NOTE",
+            text: student.notes
+          });
+          // Remove notes field to clean up database object
+          delete student.notes;
+        }
+      }
+    }
+
+    // Render Observation History Cards
+    function renderObservationHistory(student) {
+      const historyListEl = document.getElementById("observations-history-list");
+      historyListEl.innerHTML = "";
+
+      if (student.observations.length === 0) {
+        historyListEl.innerHTML = `<div style="color: var(--text-muted); font-style: italic; padding: 1rem 0;">No observations recorded yet.</div>`;
+        return;
+      }
+
+      // Sort by date or show in order
+      student.observations.forEach(obs => {
+        const card = document.createElement("div");
+        card.className = "observation-card";
+        card.innerHTML = `
+          <div class="observation-date">${obs.date}</div>
+          <div class="observation-text">${obs.text}</div>
+        `;
+        historyListEl.appendChild(card);
+      });
+
+      // Scroll to bottom of history
+      historyListEl.scrollTop = historyListEl.scrollHeight;
     }
 
     // Add Student Modal controls
@@ -265,7 +326,7 @@
       e.preventDefault();
       const first_name = document.getElementById("new-first-name").value.trim();
       const id_number = document.getElementById("new-id-number").value.trim();
-      const notes = document.getElementById("new-notes").value.trim();
+      const initialObs = document.getElementById("new-initial-observation").value.trim();
 
       // Check if student id or first name already exists
       const exists = localStudents.some(s => s.id_number.toLowerCase() === id_number.toLowerCase());
@@ -275,7 +336,21 @@
       }
 
       const newId = localStudents.length > 0 ? Math.max(...localStudents.map(s => s.id)) + 1 : 1;
-      const newStudent = { id: newId, first_name, id_number, notes };
+      
+      const newStudent = { 
+        id: newId, 
+        first_name, 
+        id_number,
+        observations: [] 
+      };
+
+      if (initialObs !== "") {
+        const currentDate = new Date().toLocaleString();
+        newStudent.observations.push({
+          date: currentDate,
+          text: initialObs
+        });
+      }
       
       localStudents.push(newStudent);
       renderStudentList();
@@ -285,33 +360,54 @@
       selectStudent(newId);
       
       // Auto-trigger sync to GitHub
-      saveNotes();
+      syncDatabase();
+    }
+
+    // Create a new observation entry locally, then trigger sync
+    function addNewObservation() {
+      if (selectedStudentId === null) return;
+
+      const textInput = document.getElementById("new-observation-text");
+      const textVal = textInput.value.trim();
+
+      if (textVal === "") {
+        alert("Please enter observation text before saving!");
+        return;
+      }
+
+      const student = localStudents.find(s => s.id === selectedStudentId);
+      if (student) {
+        ensureObservationsArray(student);
+        
+        const currentDate = new Date().toLocaleString();
+        student.observations.push({
+          date: currentDate,
+          text: textVal
+        });
+
+        // Clear entry field
+        textInput.value = "";
+
+        // Re-render history list
+        renderObservationHistory(student);
+
+        // Sync changes with GitHub Pages repository
+        syncDatabase();
+      }
     }
 
     // Save changes and update data.js on GitHub
-    async function saveNotes() {
-      if (selectedStudentId === null) return;
-      
-      const notesValue = document.getElementById("student-notes").value;
-      
-      // Update our local cache first
-      const idx = localStudents.findIndex(s => s.id === selectedStudentId);
-      if (idx !== -1) {
-        localStudents[idx].notes = notesValue;
-      }
-
-      // Display saving state
+    async function syncDatabase() {
       const statusEl = document.getElementById("save-status");
-      statusEl.className = "status-msg info";
+      statusEl.className = "status-msg info visible";
       statusEl.innerHTML = `<span class="spinner"></span> Syncing with GitHub...`;
-      statusEl.style.display = "flex";
 
       const config = window.GITHUB_CONFIG;
       
       // Check if config has been modified from placeholder
       if (config.owner.startsWith("YOUR_") || config.repo.startsWith("YOUR_")) {
-        statusEl.className = "status-msg error";
-        statusEl.textContent = "❌ Error: Config placeholders detected in data.js. Configure GitHub info to save.";
+        statusEl.className = "status-msg error visible";
+        statusEl.textContent = "Error: Config placeholders detected in data.js. Configure GitHub info to save.";
         return;
       }
 
@@ -347,7 +443,6 @@ window.students = ${JSON.stringify(localStudents, null, 2)};
 
         // Step 3: Base64 encode the content (handles UTF-8 strings properly)
         const utf8Bytes = new TextEncoder().encode(fileContent);
-        // Base64 encoding the byte stream safely
         const base64Content = btoa(String.fromCharCode(...utf8Bytes));
 
         // Step 4: PUT the updated file back to Github
@@ -374,16 +469,16 @@ window.students = ${JSON.stringify(localStudents, null, 2)};
         }
 
         // Successfully updated!
-        statusEl.className = "status-msg success";
-        statusEl.textContent = "✅ Saved and Synced to GitHub!";
+        statusEl.className = "status-msg success visible";
+        statusEl.textContent = "Success: Saved and Synced to GitHub!";
         
-        // Update the global state so parent portal could reload it locally if needed
+        // Update the global state
         window.students = [...localStudents];
 
       } catch (error) {
         console.error("GitHub Sync Error:", error);
-        statusEl.className = "status-msg error";
-        statusEl.textContent = `❌ Error: ${error.message}`;
+        statusEl.className = "status-msg error visible";
+        statusEl.textContent = `Error: ${error.message}`;
       }
     }
   </script>
