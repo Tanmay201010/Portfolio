@@ -65,5 +65,16 @@ window.students = [
         "text": "11BBP7WCY04pzcfofSJ1L4_13YmfjzAVMYShISYRVFDxdYZFxRk8h7pDpfmhDlGycJMSOL2CNMrF9KGobM"
       }
     ]
+  },
+  {
+    "id": 4,
+    "first_name": "xyz",
+    "id_number": "1120987",
+    "observations": [
+      {
+        "date": "7/7/2026, 12:44:20 pm",
+        "text": "ewrwer"
+      }
+    ]
   }
 ];
