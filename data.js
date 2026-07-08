@@ -1,7 +1,7 @@
 // Student Management System - Data Store
 // This file is read and written dynamically using the GitHub API.
 
-window.TEACHER_PASSWORD_HASH = "cde383eee8ee7a4400adf7a15f716f179a2eb97646b37e089eb8d6d04e663416";
+window.TEACHER_PASSWORD = "teacher123";
 
 window.GITHUB_CONFIG = {
   "token_part1": "",
@@ -13,7 +13,8 @@ window.GITHUB_CONFIG = {
 };
 
 window.sections = [
-  "Section I"
+  "Section I",
+  "Section A"
 ];
 
 window.students = [
