@@ -1129,76 +1129,155 @@ textarea {
 }
 
 /* ================================================
-   SECTION FILTER & CREATION STYLES
+   SECTION SELECTION SCREEN
    ================================================ */
 
-.section-filter-row {
+.section-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.2rem;
+  margin-bottom: 1.2rem;
+}
+
+/* Individual clickable section card */
+.section-card {
+  background: rgba(10, 15, 30, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 20px;
+  padding: 2rem 1.5rem;
+  cursor: pointer;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 0.4s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.section-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.section-card:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 16px 40px rgba(99, 102, 241, 0.18);
+  transform: translateY(-6px);
+}
+
+.section-card:hover::before {
+  opacity: 1;
+}
+
+.section-card-icon {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 16px;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.8rem;
-  border-bottom: 1px solid var(--glass-border);
-  padding-bottom: 1rem;
+  justify-content: center;
+  color: #a5b4fc;
+  transition: all 0.35s ease;
 }
 
-.section-select {
-  flex: 1;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid var(--glass-border);
+.section-card:hover .section-card-icon {
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+  transform: rotate(-5deg) scale(1.1);
+}
+
+.section-card-name {
+  font-size: 1.1rem;
+  font-weight: 700;
   color: var(--text-main);
-  padding: 0.55rem 0.9rem;
-  border-radius: 10px;
-  font-size: 0.9rem;
-  font-family: inherit;
-  outline: none;
-  transition: all 0.3s ease;
+  letter-spacing: -0.01em;
+}
+
+.section-card-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Add new section card */
+.section-card-add {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1.5px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 2rem 1.5rem;
   cursor: pointer;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg fill='white' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  background-size: 16px;
-  padding-right: 1.8rem;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  animation: fadeIn 0.4s ease-out;
 }
 
-.section-select:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
-  background-color: rgba(15, 23, 42, 0.8);
+.section-card-add:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.05);
+  transform: translateY(-4px);
 }
 
-.section-select option {
-  background: var(--bg-secondary);
-  color: var(--text-main);
+.section-card-add-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
 }
 
-.btn-add-section {
+.section-card-add:hover .section-card-add-icon {
+  background: rgba(99, 102, 241, 0.25);
+  transform: rotate(90deg);
+}
+
+/* Back button in nav header */
+.btn-back-section {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  background: rgba(255, 255, 255, 0.04);
+  width: 34px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--glass-border);
   border-radius: 10px;
-  color: var(--text-main);
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
-.btn-add-section:hover {
+.btn-back-section:hover {
   background: rgba(99, 102, 241, 0.15);
-  border-color: rgba(99, 102, 241, 0.4);
   color: #a5b4fc;
-  transform: translateY(-1px);
+  border-color: rgba(99, 102, 241, 0.35);
 }
 
-.btn-add-section:active {
-  transform: translateY(1px);
-}
+
 
 /* ================================================
    DANGER/DELETE PROFILE BUTTONS

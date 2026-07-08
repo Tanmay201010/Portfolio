@@ -1,69 +1,57 @@
-// Load from localStorage backups if available, otherwise fall back to window data
+// ==========================================
+// Aetheris Portal Systems — Unified App Controller
+// ==========================================
+
+// Load cached data from localStorage
 try {
-  const cachedStudents = localStorage.getItem("aetheris_students_backup");
-  if (cachedStudents) {
-    window.students = JSON.parse(cachedStudents);
-  }
-} catch (e) {
-  console.warn("localStorage is blocked or unavailable for students:", e);
-}
+  const cs = localStorage.getItem("aetheris_students_backup");
+  if (cs) window.students = JSON.parse(cs);
+} catch (e) { console.warn("Could not restore students from cache:", e); }
 
 try {
-  const cachedSections = localStorage.getItem("aetheris_sections_backup");
-  if (cachedSections) {
-    window.sections = JSON.parse(cachedSections);
-  }
-} catch (e) {
-  console.warn("localStorage is blocked or unavailable for sections:", e);
-}
+  const csec = localStorage.getItem("aetheris_sections_backup");
+  if (csec) window.sections = JSON.parse(csec);
+} catch (e) { console.warn("Could not restore sections from cache:", e); }
 
 let localStudents = [];
 let selectedStudentId = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   const path = window.location.pathname;
-  if (path.includes("teacher.html")) {
-    initTeacherPortal();
-  } else if (path.includes("parent.html")) {
-    initParentPortal();
-  }
+  if (path.includes("teacher.html")) initTeacherPortal();
+  else if (path.includes("parent.html"))  initParentPortal();
 });
 
+// ------------------------------------------
+// Local backup helpers
+// ------------------------------------------
 function saveToLocalBackup() {
   try {
     localStorage.setItem("aetheris_students_backup", JSON.stringify(window.students));
-    localStorage.setItem("aetheris_sections_backup", JSON.stringify(window.sections || ["Section A", "Section B"]));
-  } catch (e) {
-    console.error("Failed to save to local backup:", e);
-  }
+    localStorage.setItem("aetheris_sections_backup", JSON.stringify(window.sections || []));
+  } catch (e) { console.error("Backup failed:", e); }
 }
 
-// ==========================================
-// HELPER: Get token from localStorage only
-// ==========================================
-
+// ------------------------------------------
+// Token helpers (localStorage only, never committed)
+// ------------------------------------------
 function getToken() {
-  try {
-    return localStorage.getItem("aetheris_pat") || "";
-  } catch (e) {
-    console.warn("localStorage is blocked or unavailable:", e);
-    return "";
-  }
+  try { return localStorage.getItem("aetheris_pat") || ""; }
+  catch (e) { return ""; }
 }
-
 function setToken(raw) {
-  try {
-    localStorage.setItem("aetheris_pat", raw);
-  } catch (e) {
-    console.warn("localStorage is blocked or unavailable:", e);
-  }
+  try { localStorage.setItem("aetheris_pat", raw); }
+  catch (e) { console.warn("Could not save token:", e); }
 }
 
-// Build the data.js content for saving to GitHub — token fields are always EMPTY
+// ------------------------------------------
+// Build the file content to commit to GitHub
+// Token fields are always BLANK in committed file
+// ------------------------------------------
 function buildDataJsContent() {
   const safeConfig = {
-    token_part1: "",  // Never persisted to GitHub
-    token_part2: "",  // Never persisted to GitHub
+    token_part1: "",
+    token_part2: "",
     owner: window.GITHUB_CONFIG.owner,
     repo: window.GITHUB_CONFIG.repo,
     branch: window.GITHUB_CONFIG.branch,
@@ -77,294 +65,202 @@ window.TEACHER_PASSWORD = ${JSON.stringify(window.TEACHER_PASSWORD, null, 2)};
 
 window.GITHUB_CONFIG = ${JSON.stringify(safeConfig, null, 2)};
 
-window.sections = ${JSON.stringify(window.sections || ["Section A", "Section B"], null, 2)};
+window.sections = ${JSON.stringify(window.sections || [], null, 2)};
 
 window.students = ${JSON.stringify(localStudents, null, 2)};
 `;
 }
 
-// ==========================================
-// Fetch absolute latest data.js from GitHub API
-// ==========================================
+// ------------------------------------------
+// Fetch fresh data from GitHub API
+// ------------------------------------------
 async function fetchLatestStudents() {
   const config = window.GITHUB_CONFIG;
-  if (!config || !config.owner || !config.repo || config.owner.startsWith("YOUR_") || config.repo.startsWith("YOUR_")) {
-    return null; // Not configured yet
-  }
+  if (!config || !config.owner || !config.repo ||
+      config.owner.startsWith("YOUR_") || config.repo.startsWith("YOUR_")) return null;
 
   const token = getToken();
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}?ref=${config.branch}&_=${Date.now()}`;
-  
-  let response;
-  const publicHeaders = { "Accept": "application/vnd.github.v3+json" };
+  const authHeaders = token
+    ? { "Accept": "application/vnd.github.v3+json", "Authorization": `token ${token}` }
+    : { "Accept": "application/vnd.github.v3+json" };
 
   try {
-    if (token) {
-      // Try with token first to leverage higher rate limits
-      response = await fetch(url, { 
-        headers: { 
-          "Accept": "application/vnd.github.v3+json",
-          "Authorization": `token ${token}`
-        }, 
-        cache: "no-store" 
-      });
-      // If unauthorized (invalid/revoked token), retry without token
-      if (response.status === 401) {
-        console.warn("GitHub token returned 401 (invalid/revoked). Retrying without token...");
-        response = await fetch(url, { headers: publicHeaders, cache: "no-store" });
-      }
-    } else {
-      response = await fetch(url, { headers: publicHeaders, cache: "no-store" });
+    let response = await fetch(url, { headers: authHeaders, cache: "no-store" });
+    if (response.status === 401) {
+      response = await fetch(url, { headers: { "Accept": "application/vnd.github.v3+json" }, cache: "no-store" });
     }
-
-    if (!response.ok) {
-      console.warn(`Failed to fetch live database. Status: ${response.status}`);
-      return null;
-    }
+    if (!response.ok) { console.warn("Fetch failed:", response.status); return null; }
 
     const fileData = await response.json();
-    const binaryString = atob(fileData.content.replace(/\s/g, ''));
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
+    const raw = atob(fileData.content.replace(/\s/g, ""));
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
     const fileContent = new TextDecoder("utf-8").decode(bytes);
 
     // Parse sections
-    const matchSections = fileContent.match(/window\.sections\s*=\s*(\[[\s\S]*?\])/);
-    if (matchSections) {
-      window.sections = JSON.parse(matchSections[1]);
+    const secMatch = fileContent.match(/window\.sections\s*=\s*(\[[\s\S]*?\]);/);
+    if (secMatch) {
+      try { window.sections = JSON.parse(secMatch[1]); } catch (_) {}
     }
 
     // Parse students
-    const matchStudents = fileContent.match(/window\.students\s*=\s*(\[[\s\S]*\])/);
-    if (matchStudents) {
-      const parsed = JSON.parse(matchStudents[1]);
+    const stuMatch = fileContent.match(/window\.students\s*=\s*(\[[\s\S]*?\]);/);
+    if (stuMatch) {
+      const parsed = JSON.parse(stuMatch[1]);
       window.students = parsed;
       saveToLocalBackup();
       return parsed;
     }
-  } catch (err) {
-    console.warn("Error loading latest student data from GitHub:", err);
-  }
+  } catch (err) { console.warn("fetchLatestStudents error:", err); }
   return null;
 }
 
 // ==========================================
-// 1. TEACHER PORTAL LOGIC
+// TEACHER PORTAL — 3 SCREENS:
+//  1. Login  →  2. Section Selector  →  3. Dashboard
 // ==========================================
 
 function initTeacherPortal() {
   const isAuth = sessionStorage.getItem("teacher_auth") === "true";
-  const loginContainer = document.getElementById("login-container");
 
   if (isAuth) {
-    showTeacherDashboard();
-  } else if (loginContainer) {
-    loginContainer.style.display = "block";
+    showSectionSelector();
+  } else {
+    document.getElementById("login-container").style.display = "block";
   }
 
-  const loginForm = document.getElementById("login-form");
-  if (loginForm) {
-    loginForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const pwd = document.getElementById("password").value;
-      if (pwd === window.TEACHER_PASSWORD) {
-        sessionStorage.setItem("teacher_auth", "true");
-        showTeacherDashboard();
-      } else {
-        const err = document.getElementById("login-error");
-        if (err) {
-          err.style.display = "flex";
-          setTimeout(() => err.style.display = "none", 3000);
-        }
-      }
-    });
-  }
+  document.getElementById("login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const pwd = document.getElementById("password").value;
+    if (pwd === window.TEACHER_PASSWORD) {
+      sessionStorage.setItem("teacher_auth", "true");
+      document.getElementById("login-container").style.display = "none";
+      showSectionSelector();
+    } else {
+      const err = document.getElementById("login-error");
+      if (err) { err.style.display = "flex"; setTimeout(() => err.style.display = "none", 3000); }
+    }
+  });
 
   const searchBar = document.getElementById("search-bar");
   if (searchBar) {
     searchBar.addEventListener("input", (e) => {
-      const query = e.target.value.toLowerCase().trim();
-      filterStudents(query);
-      const matched = localStudents.find(s => s.section === window.selectedSection && s.first_name.toLowerCase() === query);
-      if (matched) selectStudent(matched.id);
+      filterStudents(e.target.value.toLowerCase().trim());
     });
   }
 }
 
-async function showTeacherDashboard() {
-  const loginContainer = document.getElementById("login-container");
-  const navHeader = document.getElementById("nav-header");
-  const dbContainer = document.getElementById("dashboard-container");
-
-  if (loginContainer) loginContainer.style.display = "none";
-  if (navHeader) navHeader.style.display = "flex";
-  if (dbContainer) dbContainer.style.display = "grid";
-
-  // Initialize sections list if empty
+// ------------------------------------------
+// SCREEN 2: Section Selector
+// ------------------------------------------
+async function showSectionSelector() {
+  // Ensure sections exist
   if (!window.sections || window.sections.length === 0) {
     window.sections = ["Section A", "Section B"];
   }
 
-  // Default to the first section on load
-  if (!window.selectedSection || !window.sections.includes(window.selectedSection)) {
-    window.selectedSection = window.sections[0];
-  }
+  // Hide login, show section selector
+  document.getElementById("login-container").style.display = "none";
+  document.getElementById("nav-header").style.display = "none";
+  document.getElementById("dashboard-container").style.display = "none";
+  document.getElementById("section-select-screen").style.display = "block";
 
-  // Load standard students array
-  localStudents = [...window.students];
+  // Fetch fresh data in background while showing the screen
+  renderSectionCards();
 
-  // Render sidebar filter and new student sections
-  renderSectionDropdowns();
+  try {
+    const latest = await fetchLatestStudents();
+    if (latest) {
+      localStudents = [...latest];
+      renderSectionCards(); // re-render with updated student counts
+    }
+  } catch (_) {}
+}
+
+function renderSectionCards() {
+  const grid = document.getElementById("section-cards-grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  const sections = window.sections || [];
+  sections.forEach((sec) => {
+    const count = (window.students || []).filter(s => s.section === sec).length;
+    const card = document.createElement("div");
+    card.className = "section-card";
+    card.onclick = () => openDashboardForSection(sec);
+    card.innerHTML = `
+      <div class="section-card-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      </div>
+      <div class="section-card-name">${sec}</div>
+      <div class="section-card-count">${count} student${count !== 1 ? "s" : ""}</div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+// ------------------------------------------
+// SCREEN 3: Student Dashboard
+// ------------------------------------------
+function openDashboardForSection(sectionName) {
+  window.selectedSection = sectionName;
+
+  // Hide section selector, show dashboard
+  document.getElementById("section-select-screen").style.display = "none";
+
+  const navHeader = document.getElementById("nav-header");
+  const dbContainer = document.getElementById("dashboard-container");
+  navHeader.style.display = "flex";
+  dbContainer.style.display = "grid";
+
+  // Show section name in nav
+  const label = document.getElementById("nav-section-label");
+  if (label) label.textContent = `Currently viewing: ${sectionName}`;
+
+  // Reset selection state
+  selectedStudentId = null;
+  document.getElementById("no-selection-panel").style.display = "block";
+  document.getElementById("student-detail-panel").style.display = "none";
+
+  localStudents = [...(window.students || [])];
   renderStudentList();
 
+  // Fill GitHub config panel
   const cfgOwner = document.getElementById("cfg-owner");
   const cfgRepo = document.getElementById("cfg-repo");
   if (cfgOwner) cfgOwner.value = window.GITHUB_CONFIG.owner;
   if (cfgRepo) cfgRepo.value = window.GITHUB_CONFIG.repo;
-
   const tokenInput = document.getElementById("cfg-token");
-  if (getToken() && tokenInput) {
-    tokenInput.placeholder = "Configured (Enter new to overwrite)";
-  }
+  if (getToken() && tokenInput) tokenInput.placeholder = "Configured (Enter new to overwrite)";
 
   checkGitHubConfig();
-
-  // Fetch the absolute latest students array from GitHub in the background
-  const listEl = document.getElementById("student-list");
-  if (listEl) {
-    const loadingDiv = document.createElement("div");
-    loadingDiv.id = "sidebar-syncing-indicator";
-    loadingDiv.style.cssText = "padding: 0.6rem; text-align: center; color: var(--text-muted); font-size: 0.8rem;";
-    loadingDiv.innerHTML = `<span class="spinner"></span> Syncing latest data...`;
-    listEl.parentNode.insertBefore(loadingDiv, listEl);
-  }
-
-  try {
-    const latestStudents = await fetchLatestStudents();
-    if (latestStudents) {
-      window.students = latestStudents;
-      localStudents = [...latestStudents];
-    }
-  } catch (err) {
-    console.warn("Failed background database sync:", err);
-  } finally {
-    const indicator = document.getElementById("sidebar-syncing-indicator");
-    if (indicator) indicator.remove();
-    
-    renderSectionDropdowns();
-    renderStudentList();
-
-    if (selectedStudentId !== null) {
-      selectStudent(selectedStudentId);
-    }
-  }
 }
 
-function checkGitHubConfig() {
-  const config = window.GITHUB_CONFIG;
-  const warning = document.getElementById("config-warning");
-  const hasToken = !!getToken();
-
-  if (warning) {
-    if (!hasToken) {
-      warning.innerHTML = "Action required: Enter your GitHub PAT Token in the settings panel below and click Update & Sync Config.";
-      warning.style.display = "flex";
-    } else {
-      warning.style.display = "none";
-    }
-  }
+function goToSectionSelector() {
+  selectedStudentId = null;
+  document.getElementById("nav-header").style.display = "none";
+  document.getElementById("dashboard-container").style.display = "none";
+  showSectionSelector();
 }
 
-function logout() {
-  sessionStorage.removeItem("teacher_auth");
-  sessionStorage.removeItem("parent_auth");
-  sessionStorage.removeItem("parent_child_id");
-  window.location.reload();
-}
-
-// Populate section selector dropdowns
-function renderSectionDropdowns() {
-  if (!window.sections || window.sections.length === 0) {
-    window.sections = ["Section A", "Section B"];
-  }
-
-  if (!window.selectedSection || !window.sections.includes(window.selectedSection)) {
-    window.selectedSection = window.sections[0];
-  }
-
-  // 1. Sidebar Section Selector
-  const filterSelect = document.getElementById("section-selector");
-  if (filterSelect) {
-    filterSelect.innerHTML = "";
-    window.sections.forEach(sec => {
-      const opt = document.createElement("option");
-      opt.value = sec;
-      opt.textContent = sec;
-      filterSelect.appendChild(opt);
-    });
-    filterSelect.value = window.selectedSection;
-  }
-
-  // 2. Add Student Modal Selector
-  const addStudentSelect = document.getElementById("new-student-section");
-  if (addStudentSelect) {
-    addStudentSelect.innerHTML = "";
-    window.sections.forEach(sec => {
-      const opt = document.createElement("option");
-      opt.value = sec;
-      opt.textContent = sec;
-      addStudentSelect.appendChild(opt);
-    });
-    addStudentSelect.value = window.selectedSection;
-  }
-
-  // 3. Edit Student Modal Selector
-  const editStudentSelect = document.getElementById("modal-edit-section-select");
-  if (editStudentSelect) {
-    editStudentSelect.innerHTML = "";
-    window.sections.forEach(sec => {
-      const opt = document.createElement("option");
-      opt.value = sec;
-      opt.textContent = sec;
-      editStudentSelect.appendChild(opt);
-    });
-  }
-}
-
-function onSectionChanged() {
-  const selector = document.getElementById("section-selector");
-  if (selector) {
-    window.selectedSection = selector.value;
-    
-    // Clear selection if the student doesn't belong to the newly active section
-    if (selectedStudentId !== null) {
-      const currentStudent = localStudents.find(s => s.id === selectedStudentId);
-      if (!currentStudent || currentStudent.section !== window.selectedSection) {
-        selectedStudentId = null;
-        const noSel = document.getElementById("no-selection-panel");
-        const detail = document.getElementById("student-detail-panel");
-        if (noSel) noSel.style.display = "block";
-        if (detail) detail.style.display = "none";
-      }
-    }
-    
-    renderStudentList();
-  }
-}
-
+// ------------------------------------------
+// Student list + filtering
+// ------------------------------------------
 function renderStudentList() {
   const listEl = document.getElementById("student-list");
   if (!listEl) return;
   listEl.innerHTML = "";
 
-  // Filter students showing only ones belonging to selectedSection
-  const filtered = localStudents.filter(student => student.section === window.selectedSection);
+  const filtered = localStudents.filter(s => s.section === window.selectedSection);
 
   if (filtered.length === 0) {
-    listEl.innerHTML = `<div style="padding: 1.2rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">No students in this section.</div>`;
+    listEl.innerHTML = `<div style="padding:1.2rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">No students in this section yet.<br>Click "+ Add Student" to add one.</div>`;
     return;
   }
 
@@ -373,77 +269,54 @@ function renderStudentList() {
     li.className = `student-item ${selectedStudentId === student.id ? "active" : ""}`;
     li.setAttribute("data-id", student.id);
     li.onclick = () => selectStudent(student.id);
-    li.innerHTML = `
-      <span class="name">${student.first_name}</span>
-      <span class="id-num">${student.id_number}</span>
-    `;
+    li.innerHTML = `<span class="name">${student.first_name}</span><span class="id-num">${student.id_number}</span>`;
     listEl.appendChild(li);
   });
 }
 
 function filterStudents(query) {
   document.querySelectorAll(".student-item").forEach(item => {
-    const id = parseInt(item.getAttribute("data-id"));
-    const student = localStudents.find(s => s.id === id);
     const name = item.querySelector(".name").textContent.toLowerCase();
-    
-    // Match search query and enforce selected section filter
-    if (student && student.section === window.selectedSection && name.includes(query)) {
-      item.style.display = "flex";
-    } else {
-      item.style.display = "none";
-    }
+    item.style.display = name.includes(query) ? "flex" : "none";
   });
 }
 
 function selectStudent(id) {
   selectedStudentId = id;
-
   document.querySelectorAll(".student-item").forEach(item => {
-    if (parseInt(item.getAttribute("data-id")) === id) {
-      item.classList.add("active");
-    } else {
-      item.classList.remove("active");
-    }
+    item.classList.toggle("active", parseInt(item.getAttribute("data-id")) === id);
   });
 
   const student = localStudents.find(s => s.id === id);
-  if (student) {
-    ensureObservationsArray(student);
+  if (!student) return;
 
-    const noSel = document.getElementById("no-selection-panel");
-    const detail = document.getElementById("student-detail-panel");
-    if (noSel) noSel.style.display = "none";
-    if (detail) detail.style.display = "block";
+  ensureObservationsArray(student);
 
-    const sName = document.getElementById("student-name");
-    const sId = document.getElementById("student-id");
-    const sSectionBadge = document.getElementById("student-section-badge");
-    if (sName) sName.textContent = student.first_name;
-    if (sId) sId.textContent = student.id_number;
-    if (sSectionBadge) sSectionBadge.textContent = student.section || window.selectedSection;
+  document.getElementById("no-selection-panel").style.display = "none";
+  document.getElementById("student-detail-panel").style.display = "block";
 
-    renderObservationHistory(student);
+  document.getElementById("student-name").textContent = student.first_name;
+  document.getElementById("student-id").textContent = student.id_number;
 
-    const textInput = document.getElementById("new-observation-text");
-    if (textInput) textInput.value = "";
-
-    const statusEl = document.getElementById("save-status");
-    if (statusEl) statusEl.style.display = "none";
-  }
+  renderObservationHistory(student);
+  document.getElementById("new-observation-text").value = "";
+  const statusEl = document.getElementById("save-status");
+  if (statusEl) statusEl.style.display = "none";
 }
 
 function ensureObservationsArray(student) {
   if (!student.observations) {
     student.observations = [];
-    if (student.notes && student.notes.trim() !== "") {
+    if (student.notes && student.notes.trim()) {
       student.observations.push({ date: "Previous Note", text: student.notes });
       delete student.notes;
     }
   }
 }
 
-// Tracks which observation index is being edited in the modal
+// ------------------------------------------
+// Observation History
+// ------------------------------------------
 let editingObsIndex = null;
 
 function renderObservationHistory(student) {
@@ -451,7 +324,7 @@ function renderObservationHistory(student) {
   if (!el) return;
   el.innerHTML = "";
 
-  if (student.observations.length === 0) {
+  if (!student.observations || student.observations.length === 0) {
     el.innerHTML = `<div style="color:var(--text-muted);font-style:italic;padding:1rem 0;">No observations recorded yet.</div>`;
     return;
   }
@@ -459,15 +332,14 @@ function renderObservationHistory(student) {
   student.observations.forEach((obs, index) => {
     const card = document.createElement("div");
     card.className = "observation-card";
-
     card.innerHTML = `
       <div class="observation-card-header">
         <div class="observation-date">${obs.date}</div>
         <div class="observation-actions">
-          <button class="icon-edit-btn" onclick="openObsModal(${index})" title="Edit this observation">
+          <button class="icon-edit-btn" onclick="openObsModal(${index})" title="Edit observation">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
-          <button class="icon-delete-btn" onclick="deleteObservation(${index})" title="Delete this observation">
+          <button class="icon-delete-btn" onclick="deleteObservation(${index})" title="Delete observation">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
           </button>
         </div>
@@ -476,333 +348,244 @@ function renderObservationHistory(student) {
     `;
     el.appendChild(card);
   });
-
   el.scrollTop = el.scrollHeight;
-}
-
-// ---- Observation Edit Modal ----
-
-function openObsModal(index) {
-  const student = localStudents.find(s => s.id === selectedStudentId);
-  if (!student) return;
-  editingObsIndex = index;
-  const obs = student.observations[index];
-
-  const modal = document.getElementById("edit-obs-modal");
-  const dateLabel = document.getElementById("edit-obs-date-label");
-  const textarea = document.getElementById("modal-obs-textarea");
-  const status = document.getElementById("modal-obs-status");
-
-  if (dateLabel) dateLabel.textContent = `Date: ${obs.date}`;
-  if (textarea) { textarea.value = obs.text; }
-  if (status) status.style.display = "none";
-  if (modal) modal.style.display = "flex";
-  setTimeout(() => { if (textarea) textarea.focus(); }, 100);
-}
-
-function closeObsModal(e) {
-  if (e && e.target !== document.getElementById("edit-obs-modal")) return;
-  const modal = document.getElementById("edit-obs-modal");
-  if (modal) modal.style.display = "none";
-  editingObsIndex = null;
-}
-
-function saveObsModal() {
-  if (editingObsIndex === null) return;
-  const textarea = document.getElementById("modal-obs-textarea");
-  const status = document.getElementById("modal-obs-status");
-  const newText = textarea ? textarea.value.trim() : "";
-
-  if (newText === "") {
-    if (status) { status.className = "status-msg error"; status.style.display = "flex"; status.textContent = "Observation text cannot be empty."; }
-    return;
-  }
-
-  const student = localStudents.find(s => s.id === selectedStudentId);
-  if (student) {
-    student.observations[editingObsIndex].text = newText;
-    const modal = document.getElementById("edit-obs-modal");
-    if (modal) modal.style.display = "none";
-    editingObsIndex = null;
-    
-    window.students = [...localStudents];
-    saveToLocalBackup();
-    
-    renderObservationHistory(student);
-    syncDatabase();
-  }
-}
-
-function deleteObservation(index) {
-  if (!confirm("Are you sure you want to delete this observation? This cannot be undone.")) return;
-  const student = localStudents.find(s => s.id === selectedStudentId);
-  if (student) {
-    student.observations.splice(index, 1);
-    
-    window.students = [...localStudents];
-    saveToLocalBackup();
-    
-    renderObservationHistory(student);
-    syncDatabase();
-  }
-}
-
-// ---- Section Creation Modal ----
-
-function openAddSectionModal() {
-  const modal = document.getElementById("add-section-modal");
-  const input = document.getElementById("new-section-input");
-  const status = document.getElementById("modal-section-status");
-  if (input) input.value = "";
-  if (status) status.style.display = "none";
-  if (modal) modal.style.display = "flex";
-  setTimeout(() => { if (input) input.focus(); }, 100);
-}
-
-function closeAddSectionModal(e) {
-  if (e && e.target !== document.getElementById("add-section-modal")) return;
-  const modal = document.getElementById("add-section-modal");
-  if (modal) modal.style.display = "none";
-}
-
-function handleAddSection() {
-  const input = document.getElementById("new-section-input");
-  const status = document.getElementById("modal-section-status");
-  if (!input || !status) return;
-
-  const sectionName = input.value.trim();
-  if (sectionName === "") {
-    status.className = "status-msg error";
-    status.style.display = "flex";
-    status.textContent = "Section name cannot be empty.";
-    return;
-  }
-
-  if (!window.sections) window.sections = [];
-  
-  const exists = window.sections.some(s => s.toLowerCase() === sectionName.toLowerCase());
-  if (exists) {
-    status.className = "status-msg error";
-    status.style.display = "flex";
-    status.textContent = `"${sectionName}" already exists.`;
-    return;
-  }
-
-  // Add new section to database and select it
-  window.sections.push(sectionName);
-  window.selectedSection = sectionName;
-
-  saveToLocalBackup();
-  renderSectionDropdowns();
-  
-  const modal = document.getElementById("add-section-modal");
-  if (modal) modal.style.display = "none";
-
-  renderStudentList();
-  syncDatabase();
-}
-
-// ---- Student Details Edit & Delete Modal ----
-
-function openEditStudentModal() {
-  const student = localStudents.find(s => s.id === selectedStudentId);
-  if (!student) return;
-
-  const modal = document.getElementById("edit-student-modal");
-  const nameInput = document.getElementById("modal-edit-name-input");
-  const passwordInput = document.getElementById("modal-edit-password-input");
-  const sectionSelect = document.getElementById("modal-edit-section-select");
-  const status = document.getElementById("modal-edit-status");
-
-  renderSectionDropdowns();
-
-  if (nameInput) nameInput.value = student.first_name;
-  if (passwordInput) passwordInput.value = student.id_number;
-  if (sectionSelect) sectionSelect.value = student.section || window.sections[0];
-  if (status) status.style.display = "none";
-  if (modal) modal.style.display = "flex";
-}
-
-function closeEditStudentModal(e) {
-  if (e && e.target !== document.getElementById("edit-student-modal")) return;
-  const modal = document.getElementById("edit-student-modal");
-  if (modal) modal.style.display = "none";
-}
-
-function saveStudentDetails() {
-  if (selectedStudentId === null) return;
-  const nameInput = document.getElementById("modal-edit-name-input");
-  const passwordInput = document.getElementById("modal-edit-password-input");
-  const sectionSelect = document.getElementById("modal-edit-section-select");
-  const status = document.getElementById("modal-edit-status");
-
-  if (!nameInput || !passwordInput || !sectionSelect || !status) return;
-
-  const newName = nameInput.value.trim();
-  const newPassword = passwordInput.value.trim();
-  const newSection = sectionSelect.value;
-
-  if (newName === "") {
-    status.className = "status-msg error"; status.style.display = "flex";
-    status.textContent = "First name cannot be empty."; return;
-  }
-  if (newPassword === "") {
-    status.className = "status-msg error"; status.style.display = "flex";
-    status.textContent = "Password cannot be empty."; return;
-  }
-
-  const duplicate = localStudents.find(s => s.id !== selectedStudentId && s.id_number.toLowerCase() === newPassword.toLowerCase());
-  if (duplicate) {
-    status.className = "status-msg error"; status.style.display = "flex";
-    status.textContent = `"${newPassword}" is already used by another student.`; return;
-  }
-
-  const student = localStudents.find(s => s.id === selectedStudentId);
-  if (student) {
-    student.first_name = newName;
-    student.id_number = newPassword;
-    student.section = newSection;
-
-    // Update profile view details immediately
-    const sName = document.getElementById("student-name");
-    const sId = document.getElementById("student-id");
-    const sSectionBadge = document.getElementById("student-section-badge");
-    if (sName) sName.textContent = newName;
-    if (sId) sId.textContent = newPassword;
-    if (sSectionBadge) sSectionBadge.textContent = newSection;
-
-    // Save and sync
-    window.students = [...localStudents];
-    saveToLocalBackup();
-    
-    const modal = document.getElementById("edit-student-modal");
-    if (modal) modal.style.display = "none";
-
-    // If the section changed, clear the view if it doesn't match the current sidebar filter
-    if (newSection !== window.selectedSection) {
-      selectedStudentId = null;
-      const noSel = document.getElementById("no-selection-panel");
-      const detail = document.getElementById("student-detail-panel");
-      if (noSel) noSel.style.display = "block";
-      if (detail) detail.style.display = "none";
-    }
-
-    renderStudentList();
-    syncDatabase();
-  }
-}
-
-function deleteStudentProfile() {
-  if (selectedStudentId === null) return;
-  const student = localStudents.find(s => s.id === selectedStudentId);
-  if (!student) return;
-
-  if (!confirm(`Are you sure you want to permanently delete student "${student.first_name}" and all their observation history? This cannot be undone.`)) {
-    return;
-  }
-
-  const index = localStudents.findIndex(s => s.id === selectedStudentId);
-  if (index !== -1) {
-    localStudents.splice(index, 1);
-    
-    // Update global state and save local storage backup
-    window.students = [...localStudents];
-    saveToLocalBackup();
-
-    // Reset UI selection
-    selectedStudentId = null;
-    const noSel = document.getElementById("no-selection-panel");
-    const detail = document.getElementById("student-detail-panel");
-    if (noSel) noSel.style.display = "block";
-    if (detail) detail.style.display = "none";
-
-    // Close edit modal
-    const modal = document.getElementById("edit-student-modal");
-    if (modal) modal.style.display = "none";
-
-    renderStudentList();
-    syncDatabase();
-  }
-}
-
-// ---- Add Student Modal ----
-
-function showAddStudentModal() {
-  const modal = document.getElementById("add-student-modal");
-  if (modal) {
-    renderSectionDropdowns();
-    modal.style.display = "flex";
-  }
-}
-
-function closeAddStudentModal() {
-  const modal = document.getElementById("add-student-modal");
-  const form = document.getElementById("add-student-form");
-  if (modal) modal.style.display = "none";
-  if (form) form.reset();
-}
-
-function handleAddStudent(e) {
-  e.preventDefault();
-  const first_name = document.getElementById("new-first-name").value.trim();
-  const id_number = document.getElementById("new-id-number").value.trim();
-  const section = document.getElementById("new-student-section").value;
-  const initialObs = document.getElementById("new-initial-observation").value.trim();
-
-  if (localStudents.some(s => s.id_number.toLowerCase() === id_number.toLowerCase())) {
-    alert("A student with this ID number already exists!");
-    return;
-  }
-
-  const newId = localStudents.length > 0 ? Math.max(...localStudents.map(s => s.id)) + 1 : 1;
-  const newStudent = { id: newId, first_name, id_number, section, observations: [] };
-
-  if (initialObs !== "") {
-    newStudent.observations.push({ date: new Date().toLocaleString(), text: initialObs });
-  }
-
-  localStudents.push(newStudent);
-  
-  // Update global state and save local storage backup immediately
-  window.students = [...localStudents];
-  saveToLocalBackup();
-  
-  renderStudentList();
-  closeAddStudentModal();
-  selectStudent(newId);
-  syncDatabase();
 }
 
 function addNewObservation() {
   if (selectedStudentId === null) return;
-
   const textInput = document.getElementById("new-observation-text");
-  if (!textInput) return;
-  const textVal = textInput.value.trim();
-
-  if (textVal === "") {
-    alert("Please enter observation text before saving!");
-    return;
-  }
+  const textVal = textInput ? textInput.value.trim() : "";
+  if (!textVal) { alert("Please enter observation text before saving!"); return; }
 
   const student = localStudents.find(s => s.id === selectedStudentId);
   if (student) {
     ensureObservationsArray(student);
     student.observations.push({ date: new Date().toLocaleString(), text: textVal });
-    textInput.value = "";
-    
-    // Update global state and save local storage backup immediately
+    if (textInput) textInput.value = "";
     window.students = [...localStudents];
     saveToLocalBackup();
-    
     renderObservationHistory(student);
     syncDatabase();
   }
 }
 
+// -- Observation edit modal --
+function openObsModal(index) {
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (!student) return;
+  editingObsIndex = index;
+  const obs = student.observations[index];
+  document.getElementById("edit-obs-date-label").textContent = `Date: ${obs.date}`;
+  document.getElementById("modal-obs-textarea").value = obs.text;
+  document.getElementById("modal-obs-status").style.display = "none";
+  document.getElementById("edit-obs-modal").style.display = "flex";
+  setTimeout(() => document.getElementById("modal-obs-textarea").focus(), 100);
+}
+function closeObsModal(e) {
+  if (e && e.target !== document.getElementById("edit-obs-modal")) return;
+  document.getElementById("edit-obs-modal").style.display = "none";
+  editingObsIndex = null;
+}
+function saveObsModal() {
+  if (editingObsIndex === null) return;
+  const textarea = document.getElementById("modal-obs-textarea");
+  const status  = document.getElementById("modal-obs-status");
+  const newText = textarea ? textarea.value.trim() : "";
+  if (!newText) {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = "Observation text cannot be empty."; return;
+  }
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (student) {
+    student.observations[editingObsIndex].text = newText;
+    document.getElementById("edit-obs-modal").style.display = "none";
+    editingObsIndex = null;
+    window.students = [...localStudents];
+    saveToLocalBackup();
+    renderObservationHistory(student);
+    syncDatabase();
+  }
+}
+function deleteObservation(index) {
+  if (!confirm("Delete this observation? This cannot be undone.")) return;
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (student) {
+    student.observations.splice(index, 1);
+    window.students = [...localStudents];
+    saveToLocalBackup();
+    renderObservationHistory(student);
+    syncDatabase();
+  }
+}
+
+// ------------------------------------------
+// Add Section Modal
+// ------------------------------------------
+function openAddSectionModal() {
+  document.getElementById("new-section-input").value = "";
+  document.getElementById("modal-section-status").style.display = "none";
+  document.getElementById("add-section-modal").style.display = "flex";
+  setTimeout(() => document.getElementById("new-section-input").focus(), 100);
+}
+function closeAddSectionModal(e) {
+  if (e && e.target !== document.getElementById("add-section-modal")) return;
+  document.getElementById("add-section-modal").style.display = "none";
+}
+function handleAddSection() {
+  const input  = document.getElementById("new-section-input");
+  const status = document.getElementById("modal-section-status");
+  const name   = input ? input.value.trim() : "";
+
+  if (!name) {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = "Section name cannot be empty."; return;
+  }
+  if (!window.sections) window.sections = [];
+  if (window.sections.some(s => s.toLowerCase() === name.toLowerCase())) {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = `"${name}" already exists.`; return;
+  }
+
+  window.sections.push(name);
+  saveToLocalBackup();
+  document.getElementById("add-section-modal").style.display = "none";
+
+  // Re-render the section cards and go to the new section
+  renderSectionCards();
+  syncDatabase();
+}
+
+// ------------------------------------------
+// Add Student Modal
+// ------------------------------------------
+function showAddStudentModal() {
+  const form = document.getElementById("add-student-form");
+  if (form) form.reset();
+  document.getElementById("add-student-modal").style.display = "flex";
+}
+function closeAddStudentModal(e) {
+  if (e && e.target !== document.getElementById("add-student-modal")) return;
+  document.getElementById("add-student-modal").style.display = "none";
+  const form = document.getElementById("add-student-form");
+  if (form) form.reset();
+}
+function handleAddStudent(e) {
+  e.preventDefault();
+  const first_name  = document.getElementById("new-first-name").value.trim();
+  const id_number   = document.getElementById("new-id-number").value.trim();
+  const initialObs  = document.getElementById("new-initial-observation").value.trim();
+  const section     = window.selectedSection || (window.sections && window.sections[0]) || "Section A";
+
+  if (localStudents.some(s => s.id_number.toLowerCase() === id_number.toLowerCase())) {
+    alert("A student with this ID number already exists!"); return;
+  }
+
+  const newId = localStudents.length > 0 ? Math.max(...localStudents.map(s => s.id)) + 1 : 1;
+  const newStudent = { id: newId, first_name, id_number, section, observations: [] };
+  if (initialObs) newStudent.observations.push({ date: new Date().toLocaleString(), text: initialObs });
+
+  localStudents.push(newStudent);
+  window.students = [...localStudents];
+  saveToLocalBackup();
+
+  document.getElementById("add-student-modal").style.display = "none";
+  const form = document.getElementById("add-student-form");
+  if (form) form.reset();
+
+  renderStudentList();
+  selectStudent(newId);
+  syncDatabase();
+}
+
+// ------------------------------------------
+// Edit Student Modal
+// ------------------------------------------
+function openEditStudentModal() {
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (!student) return;
+  document.getElementById("modal-edit-name-input").value     = student.first_name;
+  document.getElementById("modal-edit-password-input").value = student.id_number;
+  document.getElementById("modal-edit-status").style.display = "none";
+  document.getElementById("edit-student-modal").style.display = "flex";
+}
+function closeEditStudentModal(e) {
+  if (e && e.target !== document.getElementById("edit-student-modal")) return;
+  document.getElementById("edit-student-modal").style.display = "none";
+}
+function saveStudentDetails() {
+  if (selectedStudentId === null) return;
+  const nameInput = document.getElementById("modal-edit-name-input");
+  const pwInput   = document.getElementById("modal-edit-password-input");
+  const status    = document.getElementById("modal-edit-status");
+
+  const newName = nameInput ? nameInput.value.trim() : "";
+  const newPw   = pwInput   ? pwInput.value.trim()   : "";
+
+  if (!newName) {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = "First name cannot be empty."; return;
+  }
+  if (!newPw) {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = "Password cannot be empty."; return;
+  }
+  const duplicate = localStudents.find(s => s.id !== selectedStudentId && s.id_number.toLowerCase() === newPw.toLowerCase());
+  if (duplicate) {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = `"${newPw}" is already used by another student.`; return;
+  }
+
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (student) {
+    student.first_name = newName;
+    student.id_number  = newPw;
+
+    document.getElementById("student-name").textContent = newName;
+    document.getElementById("student-id").textContent   = newPw;
+
+    window.students = [...localStudents];
+    saveToLocalBackup();
+    document.getElementById("edit-student-modal").style.display = "none";
+    renderStudentList();
+    syncDatabase();
+  }
+}
+function deleteStudentProfile() {
+  if (selectedStudentId === null) return;
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (!student) return;
+  if (!confirm(`Permanently delete "${student.first_name}" and all their observations? This cannot be undone.`)) return;
+
+  localStudents = localStudents.filter(s => s.id !== selectedStudentId);
+  window.students = [...localStudents];
+  saveToLocalBackup();
+
+  selectedStudentId = null;
+  document.getElementById("edit-student-modal").style.display = "none";
+  document.getElementById("student-detail-panel").style.display = "none";
+  document.getElementById("no-selection-panel").style.display  = "block";
+
+  renderStudentList();
+  syncDatabase();
+}
+
+// ------------------------------------------
+// GitHub Config
+// ------------------------------------------
+function checkGitHubConfig() {
+  const warning = document.getElementById("config-warning");
+  if (!warning) return;
+  if (!getToken()) {
+    warning.innerHTML = "Action required: Enter your GitHub PAT Token in the settings panel and click Update &amp; Sync Config.";
+    warning.style.display = "flex";
+  } else {
+    warning.style.display = "none";
+  }
+}
+
 async function updateGitHubSettings() {
-  const owner = document.getElementById("cfg-owner").value.trim();
-  const repo = document.getElementById("cfg-repo").value.trim();
+  const owner   = document.getElementById("cfg-owner").value.trim();
+  const repo    = document.getElementById("cfg-repo").value.trim();
   const rawToken = document.getElementById("cfg-token").value.trim();
   const statusEl = document.getElementById("cfg-status");
 
@@ -813,47 +596,36 @@ async function updateGitHubSettings() {
 
   if (!owner || !repo) {
     statusEl.className = "status-msg error";
-    statusEl.textContent = "Error: Username and Repo Name are required.";
-    return;
+    statusEl.textContent = "Error: Username and Repo Name are required."; return;
   }
 
   window.GITHUB_CONFIG.owner = owner;
-  window.GITHUB_CONFIG.repo = repo;
+  window.GITHUB_CONFIG.repo  = repo;
 
-  // Save token ONLY to localStorage — never to the file
-  if (rawToken !== "") {
-    setToken(rawToken);
-  }
+  if (rawToken) setToken(rawToken);
 
   if (!getToken()) {
     statusEl.className = "status-msg error";
-    statusEl.textContent = "Error: GitHub PAT Token is required.";
-    return;
+    statusEl.textContent = "Error: GitHub PAT Token is required."; return;
   }
 
   try {
     await syncDatabase();
     statusEl.className = "status-msg success";
     statusEl.textContent = "Success: Settings saved! Token stored in browser only.";
-
     const tokenInput = document.getElementById("cfg-token");
-    if (tokenInput) {
-      tokenInput.value = "";
-      tokenInput.placeholder = "Configured (Enter new to overwrite)";
-    }
-
+    if (tokenInput) { tokenInput.value = ""; tokenInput.placeholder = "Configured (Enter new to overwrite)"; }
     checkGitHubConfig();
     setTimeout(() => { statusEl.style.display = "none"; }, 5000);
-  } catch (error) {
+  } catch (err) {
     statusEl.className = "status-msg error";
-    statusEl.textContent = `Error: ${error.message}`;
+    statusEl.textContent = `Error: ${err.message}`;
   }
 }
 
-// ==========================================
-// GITHUB SYNC — Token NEVER written to file
-// ==========================================
-
+// ------------------------------------------
+// GitHub Sync
+// ------------------------------------------
 async function syncDatabase() {
   const statusEl = document.getElementById("save-status");
   if (statusEl) {
@@ -863,7 +635,7 @@ async function syncDatabase() {
   }
 
   const config = window.GITHUB_CONFIG;
-  const token = getToken();
+  const token  = getToken();
 
   if (!token) {
     const msg = "GitHub PAT Token is missing. Enter it in the settings panel.";
@@ -873,92 +645,83 @@ async function syncDatabase() {
 
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`;
 
-  try {
-    // Cache-bust with timestamp so we always get the latest SHA from GitHub
-    const bust = `?ref=${config.branch}&_=${Date.now()}`;
-    const getResponse = await fetch(`${url}${bust}`, {
-      cache: "no-store",
-      headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
-    });
+  const getResp = await fetch(`${url}?ref=${config.branch}&_=${Date.now()}`, {
+    cache: "no-store",
+    headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
+  });
 
-    let sha = null;
-    if (getResponse.ok) {
-      sha = (await getResponse.json()).sha;
-    } else if (getResponse.status !== 404) {
-      throw new Error(`Failed to fetch file metadata. Status: ${getResponse.status}`);
-    }
+  let sha = null;
+  if (getResp.ok) sha = (await getResp.json()).sha;
+  else if (getResp.status !== 404) throw new Error(`Fetch failed: ${getResp.status}`);
 
-    // Build the content to commit — token fields are ALWAYS empty in the file
-    const fileContent = buildDataJsContent();
-    const utf8Bytes = new TextEncoder().encode(fileContent);
-    const base64Content = btoa(String.fromCharCode(...utf8Bytes));
+  const fileContent   = buildDataJsContent();
+  const utf8Bytes     = new TextEncoder().encode(fileContent);
+  const base64Content = btoa(String.fromCharCode(...utf8Bytes));
+  const putBody       = { message: "Update student database (Aetheris CMS)", content: base64Content, branch: config.branch };
+  if (sha) putBody.sha = sha;
 
-    const putBody = { message: "Update student database (Aetheris CMS)", content: base64Content, branch: config.branch };
-    if (sha) putBody.sha = sha;
+  const putResp = await fetch(url, {
+    method: "PUT",
+    headers: { "Authorization": `token ${token}`, "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json" },
+    body: JSON.stringify(putBody)
+  });
 
-    const putResponse = await fetch(url, {
-      method: "PUT",
-      headers: { "Authorization": `token ${token}`, "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json" },
-      body: JSON.stringify(putBody)
-    });
-
-    if (!putResponse.ok) {
-      const errBody = await putResponse.json();
-      // If SHA mismatch, fetch the fresh SHA and retry once automatically
-      if (putResponse.status === 409 || (errBody.message && errBody.message.includes("does not match"))) {
-        const retryGet = await fetch(`${url}?ref=${config.branch}&_=${Date.now()}`, {
-          cache: "no-store",
-          headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
+  if (!putResp.ok) {
+    const errBody = await putResp.json();
+    // Auto-retry on SHA mismatch
+    if (putResp.status === 409 || (errBody.message && errBody.message.includes("does not match"))) {
+      const retryGet = await fetch(`${url}?ref=${config.branch}&_=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
+      });
+      if (retryGet.ok) {
+        putBody.sha = (await retryGet.json()).sha;
+        const retryPut = await fetch(url, {
+          method: "PUT",
+          headers: { "Authorization": `token ${token}`, "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json" },
+          body: JSON.stringify(putBody)
         });
-        if (retryGet.ok) {
-          const freshSha = (await retryGet.json()).sha;
-          putBody.sha = freshSha;
-          const retryPut = await fetch(url, {
-            method: "PUT",
-            headers: { "Authorization": `token ${token}`, "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json" },
-            body: JSON.stringify(putBody)
-          });
-          if (!retryPut.ok) {
-            const retryErr = await retryPut.json();
-            throw new Error(retryErr.message || "Retry failed to write file back to GitHub.");
-          }
-          // Retry succeeded — fall through to success handling
-          if (statusEl) { statusEl.className = "status-msg success"; statusEl.style.display = "flex"; statusEl.textContent = "Success: Saved and Synced to GitHub!"; }
-          window.students = [...localStudents];
-          return;
+        if (!retryPut.ok) {
+          const rErr = await retryPut.json();
+          throw new Error(rErr.message || "Retry failed.");
         }
+        if (statusEl) { statusEl.className = "status-msg success"; statusEl.style.display = "flex"; statusEl.textContent = "Saved and Synced to GitHub!"; }
+        window.students = [...localStudents];
+        return;
       }
-      throw new Error(errBody.message || "Failed to write file back to GitHub.");
     }
-
-    if (statusEl) { statusEl.className = "status-msg success"; statusEl.style.display = "flex"; statusEl.textContent = "Success: Saved and Synced to GitHub!"; }
-    window.students = [...localStudents];
-
-  } catch (error) {
-    console.error("GitHub Sync Error:", error);
-    if (statusEl) { statusEl.className = "status-msg error"; statusEl.style.display = "flex"; statusEl.textContent = `Error: ${error.message}`; }
-    throw error;
+    throw new Error(errBody.message || "Failed to write to GitHub.");
   }
+
+  if (statusEl) { statusEl.className = "status-msg success"; statusEl.style.display = "flex"; statusEl.textContent = "Saved and Synced to GitHub!"; }
+  window.students = [...localStudents];
+}
+
+function logout() {
+  sessionStorage.removeItem("teacher_auth");
+  sessionStorage.removeItem("parent_auth");
+  sessionStorage.removeItem("parent_child_id");
+  window.location.reload();
 }
 
 // ==========================================
-// 2. PARENT PORTAL LOGIC
+// PARENT PORTAL
 // ==========================================
 
 function initParentPortal() {
-  const isAuth = sessionStorage.getItem("parent_auth") === "true";
+  const isAuth    = sessionStorage.getItem("parent_auth") === "true";
   const studentId = sessionStorage.getItem("parent_child_id");
-  const loginContainer = document.getElementById("login-container");
+  const loginEl   = document.getElementById("login-container");
 
   if (isAuth && studentId) {
     showParentDashboard(parseInt(studentId));
-  } else if (loginContainer) {
-    loginContainer.style.display = "block";
+  } else if (loginEl) {
+    loginEl.style.display = "block";
   }
 
-  const parentLoginForm = document.getElementById("parent-login-form");
-  if (parentLoginForm) {
-    parentLoginForm.addEventListener("submit", async (e) => {
+  const form = document.getElementById("parent-login-form");
+  if (form) {
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const statusEl = document.getElementById("login-error");
       if (statusEl) {
@@ -968,18 +731,13 @@ function initParentPortal() {
       }
 
       try {
-        const latestStudents = await fetchLatestStudents();
-        if (latestStudents) {
-          window.students = latestStudents;
-        }
-      } catch (err) {
-        console.warn("Could not retrieve latest data, fallback to local:", err);
-      }
+        const latest = await fetchLatestStudents();
+        if (latest) window.students = latest;
+      } catch (_) {}
 
       const username = document.getElementById("parent-username").value.trim().toLowerCase();
       const password = document.getElementById("parent-password").value.trim();
-
-      const student = window.students.find(s =>
+      const student  = (window.students || []).find(s =>
         s.first_name.toLowerCase() === username &&
         s.id_number.toLowerCase() === password.toLowerCase()
       );
@@ -1002,57 +760,51 @@ function initParentPortal() {
 }
 
 async function showParentDashboard(studentId) {
-  const loginContainer = document.getElementById("login-container");
-  const dbContainer = document.getElementById("dashboard-container");
-  if (loginContainer) loginContainer.style.display = "none";
-  if (dbContainer) dbContainer.style.display = "block";
+  const loginEl = document.getElementById("login-container");
+  const dbEl    = document.getElementById("dashboard-container");
+  if (loginEl) loginEl.style.display = "none";
+  if (dbEl)    dbEl.style.display    = "block";
 
-  // 1. Immediately render initial data so portal feels snappy
   renderParentData(studentId);
 
-  // 2. Fetch fresh updates directly from GitHub in the background
   try {
-    const latestStudents = await fetchLatestStudents();
-    if (latestStudents) {
-      window.students = latestStudents;
-      renderParentData(studentId);
-    }
-  } catch (err) {
-    console.warn("Background parent data sync failed:", err);
-  }
+    const latest = await fetchLatestStudents();
+    if (latest) { window.students = latest; renderParentData(studentId); }
+  } catch (_) {}
 }
 
 function renderParentData(studentId) {
-  const student = window.students.find(s => s.id === studentId);
+  const student = (window.students || []).find(s => s.id === studentId);
   if (!student) { logout(); return; }
 
-  const childName = document.getElementById("child-name");
-  const childId = document.getElementById("child-id");
+  const nameEl  = document.getElementById("child-name");
+  const idEl    = document.getElementById("child-id");
   const notesEl = document.getElementById("notes-content");
-  if (childName) childName.textContent = student.first_name;
-  if (childId) childId.textContent = student.id_number;
+
+  if (nameEl)  nameEl.textContent = student.first_name;
+  if (idEl)    idEl.textContent   = student.id_number;
 
   if (notesEl) {
     notesEl.innerHTML = "";
     let observations = student.observations || [];
-    if (observations.length === 0 && student.notes && student.notes.trim() !== "") {
+    if (observations.length === 0 && student.notes && student.notes.trim()) {
       observations = [{ date: "Previous Note", text: student.notes }];
     }
 
     if (observations.length === 0) {
       notesEl.innerHTML = `<div class="notes-display-box" style="display:flex;align-items:center;justify-content:center;"><em style="color:var(--text-muted);">No observations have been recorded for your child yet.</em></div>`;
     } else {
-      const historyDiv = document.createElement("div");
-      historyDiv.className = "observations-history";
-      historyDiv.style.maxHeight = "400px";
+      const wrapper = document.createElement("div");
+      wrapper.className = "observations-history";
+      wrapper.style.maxHeight = "400px";
       observations.forEach(obs => {
         const card = document.createElement("div");
         card.className = "observation-card";
         card.innerHTML = `<div class="observation-date">${obs.date}</div><div class="observation-text">${obs.text}</div>`;
-        historyDiv.appendChild(card);
+        wrapper.appendChild(card);
       });
-      notesEl.appendChild(historyDiv);
-      historyDiv.scrollTop = historyDiv.scrollHeight;
+      notesEl.appendChild(wrapper);
+      wrapper.scrollTop = wrapper.scrollHeight;
     }
   }
 }
