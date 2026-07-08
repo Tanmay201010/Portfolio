@@ -16,6 +16,9 @@ try {
 let localStudents = [];
 let selectedStudentId = null;
 
+// The active encryption key/password for the current session (kept in memory only)
+let currentSessionPassword = "";
+
 document.addEventListener("DOMContentLoaded", () => {
   const path = window.location.pathname;
   if (path.includes("teacher.html")) initTeacherPortal();
@@ -45,10 +48,162 @@ function setToken(raw) {
 }
 
 // ------------------------------------------
-// Build the file content to commit to GitHub
-// Token fields are always BLANK in committed file
+// Cryptography & Security Helpers (Web Crypto API)
 // ------------------------------------------
-function buildDataJsContent() {
+if (!window.crypto || !window.crypto.subtle) {
+  alert("Security Warning: Web Crypto API is not supported in this browser context (requires HTTPS or localhost). Some secure features may fail.");
+}
+
+// Generate SHA-256 hash as hex string
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Helper: Convert Hex string to Uint8Array
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return bytes;
+}
+
+// Helper: Convert Uint8Array to Hex string
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Derive AES key from password and salt
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const passwordKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: 5000,
+      hash: "SHA-256"
+    },
+    passwordKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+// Encrypt plaintext with password (AES-GCM)
+async function encryptData(plaintext, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  
+  const enc = new TextEncoder();
+  const ciphertextBuffer = await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv: iv
+    },
+    key,
+    enc.encode(plaintext)
+  );
+
+  return bytesToHex(salt) + ":" + bytesToHex(iv) + ":" + bytesToHex(new Uint8Array(ciphertextBuffer));
+}
+
+// Decrypt ciphertext with password (AES-GCM)
+async function decryptData(encryptedStr, password) {
+  if (!encryptedStr || !encryptedStr.includes(":")) {
+    throw new Error("Invalid cipher format");
+  }
+  const parts = encryptedStr.split(":");
+  if (parts.length !== 3) {
+    throw new Error("Invalid cipher format parts");
+  }
+  const salt = hexToBytes(parts[0]);
+  const iv = hexToBytes(parts[1]);
+  const ciphertext = hexToBytes(parts[2]);
+
+  const key = await deriveKey(password, salt);
+  const decryptedBuffer = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: iv
+    },
+    key,
+    ciphertext
+  );
+
+  return new TextDecoder().decode(decryptedBuffer);
+}
+
+// Encrypt all students list for storage/sync
+async function getEncryptedStudentsList(studentsArray, teacherPassword) {
+  const encryptedList = [];
+  for (const s of studentsArray) {
+    const idNumber = s.id_number;
+    const encIdNum = await encryptData(idNumber, teacherPassword);
+    const obsJson = JSON.stringify(s.observations || []);
+    const encObs = await encryptData(obsJson, idNumber);
+    
+    encryptedList.push({
+      id: s.id,
+      first_name: s.first_name,
+      section: s.section,
+      id_number_hash: await sha256(idNumber),
+      encrypted_id_number: encIdNum,
+      encrypted_observations: encObs
+    });
+  }
+  return encryptedList;
+}
+
+// Decrypt all students list for session use
+async function getDecryptedStudentsList(encryptedList, teacherPassword) {
+  const decryptedList = [];
+  for (const s of encryptedList) {
+    // If a record is not encrypted (legacy migration path), use it as-is
+    if (s.id_number) {
+      decryptedList.push(s);
+      continue;
+    }
+    
+    try {
+      const idNumber = await decryptData(s.encrypted_id_number, teacherPassword);
+      let observations = [];
+      if (s.encrypted_observations) {
+        const obsJson = await decryptData(s.encrypted_observations, idNumber);
+        observations = JSON.parse(obsJson);
+      }
+      decryptedList.push({
+        id: s.id,
+        first_name: s.first_name,
+        section: s.section,
+        id_number: idNumber,
+        observations: observations
+      });
+    } catch (e) {
+      console.error("Decryption failed for student ID " + s.id, e);
+      throw new Error("Unable to decrypt database. Verify password.");
+    }
+  }
+  return decryptedList;
+}
+
+// ------------------------------------------
+// Build the file content to commit to GitHub
+// Token and Passwords are NEVER written in plaintext
+// ------------------------------------------
+async function buildDataJsContent() {
   const safeConfig = {
     token_part1: "",
     token_part2: "",
@@ -58,16 +213,19 @@ function buildDataJsContent() {
     path: window.GITHUB_CONFIG.path
   };
 
+  const teacherPasswordHash = window.TEACHER_PASSWORD_HASH || await sha256(currentSessionPassword);
+  const encryptedList = await getEncryptedStudentsList(localStudents, currentSessionPassword);
+
   return `// Student Management System - Data Store
 // This file is read and written dynamically using the GitHub API.
 
-window.TEACHER_PASSWORD = ${JSON.stringify(window.TEACHER_PASSWORD, null, 2)};
+window.TEACHER_PASSWORD_HASH = ${JSON.stringify(teacherPasswordHash, null, 2)};
 
 window.GITHUB_CONFIG = ${JSON.stringify(safeConfig, null, 2)};
 
 window.sections = ${JSON.stringify(window.sections || [], null, 2)};
 
-window.students = ${JSON.stringify(localStudents, null, 2)};
+window.students = ${JSON.stringify(encryptedList, null, 2)};
 `;
 }
 
@@ -104,6 +262,16 @@ async function fetchLatestStudents() {
       try { window.sections = JSON.parse(secMatch[1]); } catch (_) {}
     }
 
+    // Parse teacher password hash
+    const hashMatch = fileContent.match(/window\.TEACHER_PASSWORD_HASH\s*=\s*"([^"]+)";/);
+    if (hashMatch) {
+      window.TEACHER_PASSWORD_HASH = hashMatch[1];
+    } else {
+      // Legacy check
+      const legacyPassMatch = fileContent.match(/window\.TEACHER_PASSWORD\s*=\s*"([^"]+)";/);
+      if (legacyPassMatch) window.TEACHER_PASSWORD = legacyPassMatch[1];
+    }
+
     // Parse students
     const stuMatch = fileContent.match(/window\.students\s*=\s*(\[[\s\S]*?\]);/);
     if (stuMatch) {
@@ -117,29 +285,85 @@ async function fetchLatestStudents() {
 }
 
 // ==========================================
-// TEACHER PORTAL — 3 SCREENS:
-//  1. Login  →  2. Section Selector  →  3. Dashboard
+// TEACHER PORTAL — 3 SCREENS
 // ==========================================
 
-function initTeacherPortal() {
-  const isAuth = sessionStorage.getItem("teacher_auth") === "true";
+async function initTeacherPortal() {
+  const sessionPass = sessionStorage.getItem("teacher_session_pass");
 
-  if (isAuth) {
-    showSectionSelector();
+  if (sessionPass) {
+    currentSessionPassword = sessionPass;
+    try {
+      // Try decrypting with stored session password
+      localStudents = await getDecryptedStudentsList(window.students, currentSessionPassword);
+      showSectionSelector();
+    } catch (e) {
+      console.warn("Session restore failed, cleaning session.");
+      logout();
+    }
   } else {
     document.getElementById("login-container").style.display = "block";
   }
 
-  document.getElementById("login-form").addEventListener("submit", (e) => {
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const pwd = document.getElementById("password").value;
-    if (pwd === window.TEACHER_PASSWORD) {
-      sessionStorage.setItem("teacher_auth", "true");
+    const loginError = document.getElementById("login-error");
+    
+    // Verify password check
+    let isCorrect = false;
+    let isLegacy = false;
+
+    if (window.TEACHER_PASSWORD_HASH) {
+      const inputHash = await sha256(pwd);
+      if (inputHash === window.TEACHER_PASSWORD_HASH) isCorrect = true;
+    } else if (window.TEACHER_PASSWORD) {
+      if (pwd === window.TEACHER_PASSWORD) {
+        isCorrect = true;
+        isLegacy = true;
+      }
+    }
+
+    if (isCorrect) {
+      currentSessionPassword = pwd;
+      sessionStorage.setItem("teacher_session_pass", pwd);
       document.getElementById("login-container").style.display = "none";
-      showSectionSelector();
+      
+      // Perform automated background encryption migration if legacy plaintext database exists
+      if (isLegacy || (window.students && window.students.length > 0 && window.students[0].id_number)) {
+        console.log("Detecting legacy database: initiating automated browser security migration...");
+        try {
+          localStudents = [...window.students];
+          window.TEACHER_PASSWORD_HASH = await sha256(pwd);
+          // Delete plaintext pass
+          delete window.TEACHER_PASSWORD;
+          
+          await showSectionSelector();
+          // Trigger immediate sync to rewrite file securely
+          await syncDatabase();
+        } catch (migErr) {
+          console.error("Migration failed:", migErr);
+        }
+      } else {
+        // Normal secure load: decrypt students
+        try {
+          localStudents = await getDecryptedStudentsList(window.students, currentSessionPassword);
+          await showSectionSelector();
+        } catch (decErr) {
+          if (loginError) {
+            loginError.textContent = "Error decrypting database. Access Denied.";
+            loginError.style.display = "flex";
+            setTimeout(() => loginError.style.display = "none", 4000);
+          }
+          logout();
+        }
+      }
     } else {
-      const err = document.getElementById("login-error");
-      if (err) { err.style.display = "flex"; setTimeout(() => err.style.display = "none", 3000); }
+      if (loginError) {
+        loginError.textContent = "Invalid Password";
+        loginError.style.display = "flex";
+        setTimeout(() => loginError.style.display = "none", 3000);
+      }
     }
   });
 
@@ -155,28 +379,27 @@ function initTeacherPortal() {
 // SCREEN 2: Section Selector
 // ------------------------------------------
 async function showSectionSelector() {
-  // Ensure sections exist
   if (!window.sections || window.sections.length === 0) {
     window.sections = ["Section A", "Section B"];
   }
 
-  // Hide login, show section selector
   document.getElementById("login-container").style.display = "none";
   document.getElementById("nav-header").style.display = "none";
   document.getElementById("dashboard-container").style.display = "none";
   document.getElementById("section-select-screen").style.display = "block";
 
-  // Fetch fresh data in background while showing the screen
   renderSectionCards();
 
   try {
     const latest = await fetchLatestStudents();
     if (latest) {
-      localStudents = [...latest];
-      renderSectionCards(); // re-render with updated student counts
+      localStudents = await getDecryptedStudentsList(latest, currentSessionPassword);
+      renderSectionCards();
     }
   } catch (_) {}
 }
+
+let editingSectionName = null;
 
 function renderSectionCards() {
   const grid = document.getElementById("section-cards-grid");
@@ -185,12 +408,19 @@ function renderSectionCards() {
 
   const sections = window.sections || [];
   sections.forEach((sec) => {
-    const count = (window.students || []).filter(s => s.section === sec).length;
+    const count = localStudents.filter(s => s.section === sec).length;
     const card = document.createElement("div");
     card.className = "section-card";
-    card.onclick = () => openDashboardForSection(sec);
     card.innerHTML = `
-      <div class="section-card-icon">
+      <div class="section-card-actions">
+        <button class="section-card-action-btn" title="Rename section" onclick="event.stopPropagation(); openEditSectionModal('${sec.replace(/'/g, "\\'")}')"> 
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="section-card-action-btn danger" title="Delete section" onclick="event.stopPropagation(); deleteSection('${sec.replace(/'/g, "\\'")}')"> 
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div>
+      <div class="section-card-icon" onclick="openDashboardForSection('${sec.replace(/'/g, "\\'")}')"> 
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
           <circle cx="9" cy="7" r="4"/>
@@ -198,11 +428,64 @@ function renderSectionCards() {
           <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
         </svg>
       </div>
-      <div class="section-card-name">${sec}</div>
-      <div class="section-card-count">${count} student${count !== 1 ? "s" : ""}</div>
+      <div class="section-card-name" onclick="openDashboardForSection('${sec.replace(/'/g, "\\'")}')"> ${sec}</div>
+      <div class="section-card-count" onclick="openDashboardForSection('${sec.replace(/'/g, "\\'")}')"> ${count} student${count !== 1 ? "s" : ""}</div>
     `;
     grid.appendChild(card);
   });
+}
+
+// --- Section Edit / Delete ---
+function openEditSectionModal(sectionName) {
+  editingSectionName = sectionName;
+  const input  = document.getElementById("edit-section-input");
+  const status = document.getElementById("modal-edit-section-status");
+  if (input)  input.value = sectionName;
+  if (status) status.style.display = "none";
+  document.getElementById("edit-section-modal").style.display = "flex";
+  setTimeout(() => input && input.focus(), 100);
+}
+function closeEditSectionModal(e) {
+  if (e && e.target !== document.getElementById("edit-section-modal")) return;
+  document.getElementById("edit-section-modal").style.display = "none";
+  editingSectionName = null;
+}
+function saveEditSection() {
+  const input  = document.getElementById("edit-section-input");
+  const status = document.getElementById("modal-edit-section-status");
+  const newName = input ? input.value.trim() : "";
+
+  if (!newName) {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = "Section name cannot be empty."; return;
+  }
+  if (newName !== editingSectionName && window.sections.some(s => s.toLowerCase() === newName.toLowerCase())) {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = `"${newName}" already exists.`; return;
+  }
+
+  const idx = window.sections.indexOf(editingSectionName);
+  if (idx !== -1) window.sections[idx] = newName;
+
+  localStudents.forEach(s => { if (s.section === editingSectionName) s.section = newName; });
+
+  saveToLocalBackup();
+  document.getElementById("edit-section-modal").style.display = "none";
+  editingSectionName = null;
+  renderSectionCards();
+  syncDatabase();
+}
+function deleteSection(sectionName) {
+  const count = localStudents.filter(s => s.section === sectionName).length;
+  const warn  = count > 0 ? `\n\nWarning: This will also delete all ${count} student(s) in this section!` : "";
+  if (!confirm(`Delete section "${sectionName}"?${warn}\n\nThis cannot be undone.`)) return;
+
+  localStudents = localStudents.filter(s => s.section !== sectionName);
+  window.sections = window.sections.filter(s => s !== sectionName);
+
+  saveToLocalBackup();
+  renderSectionCards();
+  syncDatabase();
 }
 
 // ------------------------------------------
@@ -211,7 +494,6 @@ function renderSectionCards() {
 function openDashboardForSection(sectionName) {
   window.selectedSection = sectionName;
 
-  // Hide section selector, show dashboard
   document.getElementById("section-select-screen").style.display = "none";
 
   const navHeader = document.getElementById("nav-header");
@@ -219,19 +501,15 @@ function openDashboardForSection(sectionName) {
   navHeader.style.display = "flex";
   dbContainer.style.display = "grid";
 
-  // Show section name in nav
   const label = document.getElementById("nav-section-label");
   if (label) label.textContent = `Currently viewing: ${sectionName}`;
 
-  // Reset selection state
   selectedStudentId = null;
   document.getElementById("no-selection-panel").style.display = "block";
   document.getElementById("student-detail-panel").style.display = "none";
 
-  localStudents = [...(window.students || [])];
   renderStudentList();
 
-  // Fill GitHub config panel
   const cfgOwner = document.getElementById("cfg-owner");
   const cfgRepo = document.getElementById("cfg-repo");
   if (cfgOwner) cfgOwner.value = window.GITHUB_CONFIG.owner;
@@ -268,10 +546,39 @@ function renderStudentList() {
     const li = document.createElement("li");
     li.className = `student-item ${selectedStudentId === student.id ? "active" : ""}`;
     li.setAttribute("data-id", student.id);
-    li.onclick = () => selectStudent(student.id);
-    li.innerHTML = `<span class="name">${student.first_name}</span><span class="id-num">${student.id_number}</span>`;
+    li.innerHTML = `
+      <div class="student-item-info" onclick="selectStudent(${student.id})">
+        <span class="name">${student.first_name}</span>
+        <span class="id-num">${student.id_number}</span>
+      </div>
+      <div class="student-item-actions">
+        <button class="student-action-btn" title="Edit student" onclick="event.stopPropagation(); selectStudent(${student.id}); setTimeout(openEditStudentModal, 50);">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="student-action-btn danger" title="Delete student" onclick="event.stopPropagation(); quickDeleteStudent(${student.id});">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div>
+    `;
     listEl.appendChild(li);
   });
+}
+
+function quickDeleteStudent(id) {
+  const student = localStudents.find(s => s.id === id);
+  if (!student) return;
+  if (!confirm(`Delete "${student.first_name}" and all their observations? This cannot be undone.`)) return;
+
+  localStudents = localStudents.filter(s => s.id !== id);
+  saveToLocalBackup();
+
+  if (selectedStudentId === id) {
+    selectedStudentId = null;
+    document.getElementById("student-detail-panel").style.display = "none";
+    document.getElementById("no-selection-panel").style.display  = "block";
+  }
+  renderStudentList();
+  syncDatabase();
 }
 
 function filterStudents(query) {
@@ -362,7 +669,6 @@ function addNewObservation() {
     ensureObservationsArray(student);
     student.observations.push({ date: new Date().toLocaleString(), text: textVal });
     if (textInput) textInput.value = "";
-    window.students = [...localStudents];
     saveToLocalBackup();
     renderObservationHistory(student);
     syncDatabase();
@@ -400,7 +706,6 @@ function saveObsModal() {
     student.observations[editingObsIndex].text = newText;
     document.getElementById("edit-obs-modal").style.display = "none";
     editingObsIndex = null;
-    window.students = [...localStudents];
     saveToLocalBackup();
     renderObservationHistory(student);
     syncDatabase();
@@ -411,7 +716,6 @@ function deleteObservation(index) {
   const student = localStudents.find(s => s.id === selectedStudentId);
   if (student) {
     student.observations.splice(index, 1);
-    window.students = [...localStudents];
     saveToLocalBackup();
     renderObservationHistory(student);
     syncDatabase();
@@ -450,7 +754,6 @@ function handleAddSection() {
   saveToLocalBackup();
   document.getElementById("add-section-modal").style.display = "none";
 
-  // Re-render the section cards and go to the new section
   renderSectionCards();
   syncDatabase();
 }
@@ -485,7 +788,6 @@ function handleAddStudent(e) {
   if (initialObs) newStudent.observations.push({ date: new Date().toLocaleString(), text: initialObs });
 
   localStudents.push(newStudent);
-  window.students = [...localStudents];
   saveToLocalBackup();
 
   document.getElementById("add-student-modal").style.display = "none";
@@ -543,7 +845,6 @@ function saveStudentDetails() {
     document.getElementById("student-name").textContent = newName;
     document.getElementById("student-id").textContent   = newPw;
 
-    window.students = [...localStudents];
     saveToLocalBackup();
     document.getElementById("edit-student-modal").style.display = "none";
     renderStudentList();
@@ -557,7 +858,6 @@ function deleteStudentProfile() {
   if (!confirm(`Permanently delete "${student.first_name}" and all their observations? This cannot be undone.`)) return;
 
   localStudents = localStudents.filter(s => s.id !== selectedStudentId);
-  window.students = [...localStudents];
   saveToLocalBackup();
 
   selectedStudentId = null;
@@ -654,7 +954,7 @@ async function syncDatabase() {
   if (getResp.ok) sha = (await getResp.json()).sha;
   else if (getResp.status !== 404) throw new Error(`Fetch failed: ${getResp.status}`);
 
-  const fileContent   = buildDataJsContent();
+  const fileContent   = await buildDataJsContent();
   const utf8Bytes     = new TextEncoder().encode(fileContent);
   const base64Content = btoa(String.fromCharCode(...utf8Bytes));
   const putBody       = { message: "Update student database (Aetheris CMS)", content: base64Content, branch: config.branch };
@@ -668,7 +968,6 @@ async function syncDatabase() {
 
   if (!putResp.ok) {
     const errBody = await putResp.json();
-    // Auto-retry on SHA mismatch
     if (putResp.status === 409 || (errBody.message && errBody.message.includes("does not match"))) {
       const retryGet = await fetch(`${url}?ref=${config.branch}&_=${Date.now()}`, {
         cache: "no-store",
@@ -686,7 +985,7 @@ async function syncDatabase() {
           throw new Error(rErr.message || "Retry failed.");
         }
         if (statusEl) { statusEl.className = "status-msg success"; statusEl.style.display = "flex"; statusEl.textContent = "Saved and Synced to GitHub!"; }
-        window.students = [...localStudents];
+        window.students = await getEncryptedStudentsList(localStudents, currentSessionPassword);
         return;
       }
     }
@@ -694,13 +993,14 @@ async function syncDatabase() {
   }
 
   if (statusEl) { statusEl.className = "status-msg success"; statusEl.style.display = "flex"; statusEl.textContent = "Saved and Synced to GitHub!"; }
-  window.students = [...localStudents];
+  window.students = await getEncryptedStudentsList(localStudents, currentSessionPassword);
 }
 
 function logout() {
-  sessionStorage.removeItem("teacher_auth");
+  sessionStorage.removeItem("teacher_session_pass");
   sessionStorage.removeItem("parent_auth");
   sessionStorage.removeItem("parent_child_id");
+  sessionStorage.removeItem("parent_child_id_num");
   window.location.reload();
 }
 
@@ -711,10 +1011,11 @@ function logout() {
 function initParentPortal() {
   const isAuth    = sessionStorage.getItem("parent_auth") === "true";
   const studentId = sessionStorage.getItem("parent_child_id");
+  const childIdNum = sessionStorage.getItem("parent_child_id_num");
   const loginEl   = document.getElementById("login-container");
 
-  if (isAuth && studentId) {
-    showParentDashboard(parseInt(studentId));
+  if (isAuth && studentId && childIdNum) {
+    showParentDashboard(parseInt(studentId), childIdNum);
   } else if (loginEl) {
     loginEl.style.display = "block";
   }
@@ -737,16 +1038,31 @@ function initParentPortal() {
 
       const username = document.getElementById("parent-username").value.trim().toLowerCase();
       const password = document.getElementById("parent-password").value.trim();
-      const student  = (window.students || []).find(s =>
-        s.first_name.toLowerCase() === username &&
-        s.id_number.toLowerCase() === password.toLowerCase()
-      );
+      
+      let foundStudent = null;
+      
+      // Look up student by matching name and password hash
+      const inputHash = await sha256(password);
+      for (const s of (window.students || [])) {
+        if (s.first_name.toLowerCase() === username) {
+          if (s.id_number && s.id_number.toLowerCase() === password.toLowerCase()) {
+            // Legacy plaintext comparison
+            foundStudent = s;
+            break;
+          } else if (s.id_number_hash && s.id_number_hash === inputHash) {
+            // Secure hash comparison
+            foundStudent = s;
+            break;
+          }
+        }
+      }
 
-      if (student) {
+      if (foundStudent) {
         if (statusEl) statusEl.style.display = "none";
         sessionStorage.setItem("parent_auth", "true");
-        sessionStorage.setItem("parent_child_id", student.id);
-        showParentDashboard(student.id);
+        sessionStorage.setItem("parent_child_id", foundStudent.id);
+        sessionStorage.setItem("parent_child_id_num", password); // stored in session memory only to decrypt
+        showParentDashboard(foundStudent.id, password);
       } else {
         if (statusEl) {
           statusEl.className = "status-msg error";
@@ -759,21 +1075,24 @@ function initParentPortal() {
   }
 }
 
-async function showParentDashboard(studentId) {
+async function showParentDashboard(studentId, childIdNum) {
   const loginEl = document.getElementById("login-container");
   const dbEl    = document.getElementById("dashboard-container");
   if (loginEl) loginEl.style.display = "none";
   if (dbEl)    dbEl.style.display    = "block";
 
-  renderParentData(studentId);
+  await renderParentData(studentId, childIdNum);
 
   try {
     const latest = await fetchLatestStudents();
-    if (latest) { window.students = latest; renderParentData(studentId); }
+    if (latest) { 
+      window.students = latest; 
+      await renderParentData(studentId, childIdNum); 
+    }
   } catch (_) {}
 }
 
-function renderParentData(studentId) {
+async function renderParentData(studentId, childIdNum) {
   const student = (window.students || []).find(s => s.id === studentId);
   if (!student) { logout(); return; }
 
@@ -782,13 +1101,27 @@ function renderParentData(studentId) {
   const notesEl = document.getElementById("notes-content");
 
   if (nameEl)  nameEl.textContent = student.first_name;
-  if (idEl)    idEl.textContent   = student.id_number;
+  if (idEl)    idEl.textContent   = childIdNum;
 
   if (notesEl) {
     notesEl.innerHTML = "";
-    let observations = student.observations || [];
-    if (observations.length === 0 && student.notes && student.notes.trim()) {
-      observations = [{ date: "Previous Note", text: student.notes }];
+    let observations = [];
+    
+    if (student.encrypted_observations) {
+      try {
+        const obsJson = await decryptData(student.encrypted_observations, childIdNum);
+        observations = JSON.parse(obsJson);
+      } catch (err) {
+        console.error("Failed to decrypt observations using child password", err);
+        notesEl.innerHTML = `<div class="status-msg error">Error decrypting records. Credentials may have changed.</div>`;
+        return;
+      }
+    } else {
+      // Fallback/Legacy plaintext observations
+      observations = student.observations || [];
+      if (observations.length === 0 && student.notes && student.notes.trim()) {
+        observations = [{ date: "Previous Note", text: student.notes }];
+      }
     }
 
     if (observations.length === 0) {
