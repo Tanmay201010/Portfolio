@@ -11,38 +11,66 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body>
-  <header style="margin-bottom: 3rem; text-align: center; animation: slideDown 0.6s ease-out;">
-    <h1 style="font-size: 2.8rem; font-weight: 800; letter-spacing: -0.02em;">AETHERIS</h1>
-    <p class="subtitle" style="margin-bottom: 0;">Student Observation & Development Portal</p>
-  </header>
+<body class="landing-page">
 
-  <main class="portal-container">
-    <!-- Teacher Portal Card -->
-    <section class="portal-card" id="btn-teacher-portal" onclick="window.location.href='teacher.html'">
-      <div class="portal-icon">
-        <svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-      </div>
-      <h2 style="font-size: 1.5rem; margin-bottom: 0.8rem; font-weight: 700;">Teacher Portal</h2>
-      <p class="subtitle" style="margin-bottom: 0; font-size: 0.9rem; max-width: 280px;">
-        Access classroom observations, live student search, edit development notes, and synchronize records.
-      </p>
-    </section>
+  <!-- Premium animated background grid and glow blobs -->
+  <div class="grid-bg"></div>
+  <div class="glow-blob blob-1"></div>
+  <div class="glow-blob blob-2"></div>
+  <div class="glow-blob blob-3"></div>
 
-    <!-- Parent Portal Card -->
-    <section class="portal-card" id="btn-parent-portal" onclick="window.location.href='parent.html'">
-      <div class="portal-icon">
-        <svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-      </div>
-      <h2 style="font-size: 1.5rem; margin-bottom: 0.8rem; font-weight: 700;">Parent Portal</h2>
-      <p class="subtitle" style="margin-bottom: 0; font-size: 0.9rem; max-width: 280px;">
-        Securely sign in using your child's first name and ID to read teacher observation notes.
-      </p>
-    </section>
-  </main>
+  <div class="landing-wrapper">
+    <header class="landing-header">
+      <div class="logo-badge">SYSTEM PORTAL</div>
+      <h1 class="logo-title">AETHERIS</h1>
+      <p class="subtitle">Student Observation &amp; Classroom Management System</p>
+      <div class="header-divider"></div>
+    </header>
 
-  <footer style="margin-top: 4rem; font-size: 0.8rem; color: var(--text-muted); text-align: center; opacity: 0.7;">
-    &copy; 2026 Aetheris Portal Systems. Secure and static.
-  </footer>
+    <main class="portal-container">
+      <!-- Teacher Portal Card -->
+      <section class="portal-card teacher-card" id="btn-teacher-portal" onclick="window.location.href='teacher.html'">
+        <div class="portal-card-glow"></div>
+        <div class="portal-icon">
+          <!-- Premium Teacher/Admin SVG Icon -->
+          <svg viewBox="0 0 24 24" width="38" height="38" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <circle cx="12" cy="10" r="3"/>
+            <path d="M12 13c-2 0-4 1-4 3"/>
+          </svg>
+        </div>
+        <h2 class="portal-card-title">Teacher Space</h2>
+        <p class="portal-card-desc">
+          Log in to record student observations, manage classroom sections, edit password credentials, and synchronize data live with GitHub.
+        </p>
+        <span class="portal-card-action">Enter Portal &rarr;</span>
+      </section>
+
+      <!-- Parent Portal Card -->
+      <section class="portal-card parent-card" id="btn-parent-portal" onclick="window.location.href='parent.html'">
+        <div class="portal-card-glow"></div>
+        <div class="portal-icon">
+          <!-- Premium Parent/Home SVG Icon -->
+          <svg viewBox="0 0 24 24" width="38" height="38" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+            <path d="M12 5v4"/>
+            <path d="M10 7h4"/>
+          </svg>
+        </div>
+        <h2 class="portal-card-title">Parent Gateway</h2>
+        <p class="portal-card-desc">
+          Sign in instantly with your child's student credentials to read observation notes, view timelines, and check developmental progress.
+        </p>
+        <span class="portal-card-action">Enter Portal &rarr;</span>
+      </section>
+    </main>
+
+    <footer class="landing-footer">
+      <p>&copy; 2026 Aetheris Portal Systems. Secure, static, and cloud-synchronized.</p>
+    </footer>
+  </div>
+
 </body>
 </html>

@@ -1,11 +1,20 @@
-// Load from localStorage backup if available, otherwise fall back to window.students from data.js
-const cachedStudents = localStorage.getItem("aetheris_students_backup");
-if (cachedStudents) {
-  try {
+// Load from localStorage backups if available, otherwise fall back to window data
+try {
+  const cachedStudents = localStorage.getItem("aetheris_students_backup");
+  if (cachedStudents) {
     window.students = JSON.parse(cachedStudents);
-  } catch (e) {
-    console.error("Failed to parse cached students:", e);
   }
+} catch (e) {
+  console.warn("localStorage is blocked or unavailable for students:", e);
+}
+
+try {
+  const cachedSections = localStorage.getItem("aetheris_sections_backup");
+  if (cachedSections) {
+    window.sections = JSON.parse(cachedSections);
+  }
+} catch (e) {
+  console.warn("localStorage is blocked or unavailable for sections:", e);
 }
 
 let localStudents = [];
@@ -23,6 +32,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function saveToLocalBackup() {
   try {
     localStorage.setItem("aetheris_students_backup", JSON.stringify(window.students));
+    localStorage.setItem("aetheris_sections_backup", JSON.stringify(window.sections || ["Section A", "Section B"]));
   } catch (e) {
     console.error("Failed to save to local backup:", e);
   }
@@ -33,12 +43,20 @@ function saveToLocalBackup() {
 // ==========================================
 
 function getToken() {
-  return localStorage.getItem("aetheris_pat") || "";
+  try {
+    return localStorage.getItem("aetheris_pat") || "";
+  } catch (e) {
+    console.warn("localStorage is blocked or unavailable:", e);
+    return "";
+  }
 }
 
 function setToken(raw) {
-  // Store only in browser localStorage — NEVER written to GitHub
-  localStorage.setItem("aetheris_pat", raw);
+  try {
+    localStorage.setItem("aetheris_pat", raw);
+  } catch (e) {
+    console.warn("localStorage is blocked or unavailable:", e);
+  }
 }
 
 // Build the data.js content for saving to GitHub — token fields are always EMPTY
@@ -58,6 +76,8 @@ function buildDataJsContent() {
 window.TEACHER_PASSWORD = ${JSON.stringify(window.TEACHER_PASSWORD, null, 2)};
 
 window.GITHUB_CONFIG = ${JSON.stringify(safeConfig, null, 2)};
+
+window.sections = ${JSON.stringify(window.sections || ["Section A", "Section B"], null, 2)};
 
 window.students = ${JSON.stringify(localStudents, null, 2)};
 `;
@@ -111,10 +131,16 @@ async function fetchLatestStudents() {
     }
     const fileContent = new TextDecoder("utf-8").decode(bytes);
 
-    const match = fileContent.match(/window\.students\s*=\s*(\[[\s\S]*\])/);
-    if (match) {
-      const parsed = JSON.parse(match[1]);
-      // Update local storage backup with the fresh data
+    // Parse sections
+    const matchSections = fileContent.match(/window\.sections\s*=\s*(\[[\s\S]*?\])/);
+    if (matchSections) {
+      window.sections = JSON.parse(matchSections[1]);
+    }
+
+    // Parse students
+    const matchStudents = fileContent.match(/window\.students\s*=\s*(\[[\s\S]*\])/);
+    if (matchStudents) {
+      const parsed = JSON.parse(matchStudents[1]);
       window.students = parsed;
       saveToLocalBackup();
       return parsed;
@@ -162,8 +188,8 @@ function initTeacherPortal() {
     searchBar.addEventListener("input", (e) => {
       const query = e.target.value.toLowerCase().trim();
       filterStudents(query);
-      const exactMatch = localStudents.find(s => s.first_name.toLowerCase() === query);
-      if (exactMatch) selectStudent(exactMatch.id);
+      const matched = localStudents.find(s => s.section === window.selectedSection && s.first_name.toLowerCase() === query);
+      if (matched) selectStudent(matched.id);
     });
   }
 }
@@ -177,8 +203,21 @@ async function showTeacherDashboard() {
   if (navHeader) navHeader.style.display = "flex";
   if (dbContainer) dbContainer.style.display = "grid";
 
-  // 1. Load the initial/cached student list first so dashboard is instant
+  // Initialize sections list if empty
+  if (!window.sections || window.sections.length === 0) {
+    window.sections = ["Section A", "Section B"];
+  }
+
+  // Default to the first section on load
+  if (!window.selectedSection || !window.sections.includes(window.selectedSection)) {
+    window.selectedSection = window.sections[0];
+  }
+
+  // Load standard students array
   localStudents = [...window.students];
+
+  // Render sidebar filter and new student sections
+  renderSectionDropdowns();
   renderStudentList();
 
   const cfgOwner = document.getElementById("cfg-owner");
@@ -193,7 +232,7 @@ async function showTeacherDashboard() {
 
   checkGitHubConfig();
 
-  // 2. Fetch the absolute latest students array from GitHub in the background
+  // Fetch the absolute latest students array from GitHub in the background
   const listEl = document.getElementById("student-list");
   if (listEl) {
     const loadingDiv = document.createElement("div");
@@ -214,7 +253,10 @@ async function showTeacherDashboard() {
   } finally {
     const indicator = document.getElementById("sidebar-syncing-indicator");
     if (indicator) indicator.remove();
+    
+    renderSectionDropdowns();
     renderStudentList();
+
     if (selectedStudentId !== null) {
       selectStudent(selectedStudentId);
     }
@@ -243,12 +285,90 @@ function logout() {
   window.location.reload();
 }
 
+// Populate section selector dropdowns
+function renderSectionDropdowns() {
+  if (!window.sections || window.sections.length === 0) {
+    window.sections = ["Section A", "Section B"];
+  }
+
+  if (!window.selectedSection || !window.sections.includes(window.selectedSection)) {
+    window.selectedSection = window.sections[0];
+  }
+
+  // 1. Sidebar Section Selector
+  const filterSelect = document.getElementById("section-selector");
+  if (filterSelect) {
+    filterSelect.innerHTML = "";
+    window.sections.forEach(sec => {
+      const opt = document.createElement("option");
+      opt.value = sec;
+      opt.textContent = sec;
+      filterSelect.appendChild(opt);
+    });
+    filterSelect.value = window.selectedSection;
+  }
+
+  // 2. Add Student Modal Selector
+  const addStudentSelect = document.getElementById("new-student-section");
+  if (addStudentSelect) {
+    addStudentSelect.innerHTML = "";
+    window.sections.forEach(sec => {
+      const opt = document.createElement("option");
+      opt.value = sec;
+      opt.textContent = sec;
+      addStudentSelect.appendChild(opt);
+    });
+    addStudentSelect.value = window.selectedSection;
+  }
+
+  // 3. Edit Student Modal Selector
+  const editStudentSelect = document.getElementById("modal-edit-section-select");
+  if (editStudentSelect) {
+    editStudentSelect.innerHTML = "";
+    window.sections.forEach(sec => {
+      const opt = document.createElement("option");
+      opt.value = sec;
+      opt.textContent = sec;
+      editStudentSelect.appendChild(opt);
+    });
+  }
+}
+
+function onSectionChanged() {
+  const selector = document.getElementById("section-selector");
+  if (selector) {
+    window.selectedSection = selector.value;
+    
+    // Clear selection if the student doesn't belong to the newly active section
+    if (selectedStudentId !== null) {
+      const currentStudent = localStudents.find(s => s.id === selectedStudentId);
+      if (!currentStudent || currentStudent.section !== window.selectedSection) {
+        selectedStudentId = null;
+        const noSel = document.getElementById("no-selection-panel");
+        const detail = document.getElementById("student-detail-panel");
+        if (noSel) noSel.style.display = "block";
+        if (detail) detail.style.display = "none";
+      }
+    }
+    
+    renderStudentList();
+  }
+}
+
 function renderStudentList() {
   const listEl = document.getElementById("student-list");
   if (!listEl) return;
   listEl.innerHTML = "";
 
-  localStudents.forEach(student => {
+  // Filter students showing only ones belonging to selectedSection
+  const filtered = localStudents.filter(student => student.section === window.selectedSection);
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = `<div style="padding: 1.2rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">No students in this section.</div>`;
+    return;
+  }
+
+  filtered.forEach(student => {
     const li = document.createElement("li");
     li.className = `student-item ${selectedStudentId === student.id ? "active" : ""}`;
     li.setAttribute("data-id", student.id);
@@ -263,8 +383,16 @@ function renderStudentList() {
 
 function filterStudents(query) {
   document.querySelectorAll(".student-item").forEach(item => {
+    const id = parseInt(item.getAttribute("data-id"));
+    const student = localStudents.find(s => s.id === id);
     const name = item.querySelector(".name").textContent.toLowerCase();
-    item.style.display = name.includes(query) ? "flex" : "none";
+    
+    // Match search query and enforce selected section filter
+    if (student && student.section === window.selectedSection && name.includes(query)) {
+      item.style.display = "flex";
+    } else {
+      item.style.display = "none";
+    }
   });
 }
 
@@ -290,8 +418,10 @@ function selectStudent(id) {
 
     const sName = document.getElementById("student-name");
     const sId = document.getElementById("student-id");
+    const sSectionBadge = document.getElementById("student-section-badge");
     if (sName) sName.textContent = student.first_name;
     if (sId) sId.textContent = student.id_number;
+    if (sSectionBadge) sSectionBadge.textContent = student.section || window.selectedSection;
 
     renderObservationHistory(student);
 
@@ -395,7 +525,6 @@ function saveObsModal() {
     if (modal) modal.style.display = "none";
     editingObsIndex = null;
     
-    // Update global state and save local storage backup immediately
     window.students = [...localStudents];
     saveToLocalBackup();
     
@@ -418,33 +547,105 @@ function deleteObservation(index) {
   }
 }
 
-// ---- Password Edit Modal ----
+// ---- Section Creation Modal ----
 
-function openPasswordModal() {
-  const student = localStudents.find(s => s.id === selectedStudentId);
-  if (!student) return;
-  const modal = document.getElementById("password-modal");
-  const input = document.getElementById("modal-password-input");
-  const status = document.getElementById("modal-password-status");
-  if (input) input.value = student.id_number;
+function openAddSectionModal() {
+  const modal = document.getElementById("add-section-modal");
+  const input = document.getElementById("new-section-input");
+  const status = document.getElementById("modal-section-status");
+  if (input) input.value = "";
   if (status) status.style.display = "none";
   if (modal) modal.style.display = "flex";
-  setTimeout(() => { if (input) { input.select(); } }, 100);
+  setTimeout(() => { if (input) input.focus(); }, 100);
 }
 
-function closePasswordModal(e) {
-  if (e && e.target !== document.getElementById("password-modal")) return;
-  const modal = document.getElementById("password-modal");
+function closeAddSectionModal(e) {
+  if (e && e.target !== document.getElementById("add-section-modal")) return;
+  const modal = document.getElementById("add-section-modal");
   if (modal) modal.style.display = "none";
 }
 
-function saveStudentPassword() {
-  if (selectedStudentId === null) return;
-  const input = document.getElementById("modal-password-input");
-  const status = document.getElementById("modal-password-status");
+function handleAddSection() {
+  const input = document.getElementById("new-section-input");
+  const status = document.getElementById("modal-section-status");
   if (!input || !status) return;
 
-  const newPassword = input.value.trim();
+  const sectionName = input.value.trim();
+  if (sectionName === "") {
+    status.className = "status-msg error";
+    status.style.display = "flex";
+    status.textContent = "Section name cannot be empty.";
+    return;
+  }
+
+  if (!window.sections) window.sections = [];
+  
+  const exists = window.sections.some(s => s.toLowerCase() === sectionName.toLowerCase());
+  if (exists) {
+    status.className = "status-msg error";
+    status.style.display = "flex";
+    status.textContent = `"${sectionName}" already exists.`;
+    return;
+  }
+
+  // Add new section to database and select it
+  window.sections.push(sectionName);
+  window.selectedSection = sectionName;
+
+  saveToLocalBackup();
+  renderSectionDropdowns();
+  
+  const modal = document.getElementById("add-section-modal");
+  if (modal) modal.style.display = "none";
+
+  renderStudentList();
+  syncDatabase();
+}
+
+// ---- Student Details Edit & Delete Modal ----
+
+function openEditStudentModal() {
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (!student) return;
+
+  const modal = document.getElementById("edit-student-modal");
+  const nameInput = document.getElementById("modal-edit-name-input");
+  const passwordInput = document.getElementById("modal-edit-password-input");
+  const sectionSelect = document.getElementById("modal-edit-section-select");
+  const status = document.getElementById("modal-edit-status");
+
+  renderSectionDropdowns();
+
+  if (nameInput) nameInput.value = student.first_name;
+  if (passwordInput) passwordInput.value = student.id_number;
+  if (sectionSelect) sectionSelect.value = student.section || window.sections[0];
+  if (status) status.style.display = "none";
+  if (modal) modal.style.display = "flex";
+}
+
+function closeEditStudentModal(e) {
+  if (e && e.target !== document.getElementById("edit-student-modal")) return;
+  const modal = document.getElementById("edit-student-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function saveStudentDetails() {
+  if (selectedStudentId === null) return;
+  const nameInput = document.getElementById("modal-edit-name-input");
+  const passwordInput = document.getElementById("modal-edit-password-input");
+  const sectionSelect = document.getElementById("modal-edit-section-select");
+  const status = document.getElementById("modal-edit-status");
+
+  if (!nameInput || !passwordInput || !sectionSelect || !status) return;
+
+  const newName = nameInput.value.trim();
+  const newPassword = passwordInput.value.trim();
+  const newSection = sectionSelect.value;
+
+  if (newName === "") {
+    status.className = "status-msg error"; status.style.display = "flex";
+    status.textContent = "First name cannot be empty."; return;
+  }
   if (newPassword === "") {
     status.className = "status-msg error"; status.style.display = "flex";
     status.textContent = "Password cannot be empty."; return;
@@ -458,36 +659,80 @@ function saveStudentPassword() {
 
   const student = localStudents.find(s => s.id === selectedStudentId);
   if (student) {
+    student.first_name = newName;
     student.id_number = newPassword;
+    student.section = newSection;
+
+    // Update profile view details immediately
+    const sName = document.getElementById("student-name");
     const sId = document.getElementById("student-id");
+    const sSectionBadge = document.getElementById("student-section-badge");
+    if (sName) sName.textContent = newName;
     if (sId) sId.textContent = newPassword;
-    
-    // Update global state and save local storage backup immediately
+    if (sSectionBadge) sSectionBadge.textContent = newSection;
+
+    // Save and sync
     window.students = [...localStudents];
     saveToLocalBackup();
     
+    const modal = document.getElementById("edit-student-modal");
+    if (modal) modal.style.display = "none";
+
+    // If the section changed, clear the view if it doesn't match the current sidebar filter
+    if (newSection !== window.selectedSection) {
+      selectedStudentId = null;
+      const noSel = document.getElementById("no-selection-panel");
+      const detail = document.getElementById("student-detail-panel");
+      if (noSel) noSel.style.display = "block";
+      if (detail) detail.style.display = "none";
+    }
+
     renderStudentList();
-
-    status.className = "status-msg info"; status.style.display = "flex";
-    status.innerHTML = `<span class="spinner"></span> Saving...`;
-
-    syncDatabase().then(() => {
-      status.className = "status-msg success";
-      status.textContent = `Password updated to "${newPassword}"!`;
-      setTimeout(() => {
-        const modal = document.getElementById("password-modal");
-        if (modal) modal.style.display = "none";
-      }, 1800);
-    }).catch(err => {
-      status.className = "status-msg error";
-      status.textContent = `Sync failed: ${err.message}`;
-    });
+    syncDatabase();
   }
 }
 
+function deleteStudentProfile() {
+  if (selectedStudentId === null) return;
+  const student = localStudents.find(s => s.id === selectedStudentId);
+  if (!student) return;
+
+  if (!confirm(`Are you sure you want to permanently delete student "${student.first_name}" and all their observation history? This cannot be undone.`)) {
+    return;
+  }
+
+  const index = localStudents.findIndex(s => s.id === selectedStudentId);
+  if (index !== -1) {
+    localStudents.splice(index, 1);
+    
+    // Update global state and save local storage backup
+    window.students = [...localStudents];
+    saveToLocalBackup();
+
+    // Reset UI selection
+    selectedStudentId = null;
+    const noSel = document.getElementById("no-selection-panel");
+    const detail = document.getElementById("student-detail-panel");
+    if (noSel) noSel.style.display = "block";
+    if (detail) detail.style.display = "none";
+
+    // Close edit modal
+    const modal = document.getElementById("edit-student-modal");
+    if (modal) modal.style.display = "none";
+
+    renderStudentList();
+    syncDatabase();
+  }
+}
+
+// ---- Add Student Modal ----
+
 function showAddStudentModal() {
   const modal = document.getElementById("add-student-modal");
-  if (modal) modal.style.display = "flex";
+  if (modal) {
+    renderSectionDropdowns();
+    modal.style.display = "flex";
+  }
 }
 
 function closeAddStudentModal() {
@@ -501,6 +746,7 @@ function handleAddStudent(e) {
   e.preventDefault();
   const first_name = document.getElementById("new-first-name").value.trim();
   const id_number = document.getElementById("new-id-number").value.trim();
+  const section = document.getElementById("new-student-section").value;
   const initialObs = document.getElementById("new-initial-observation").value.trim();
 
   if (localStudents.some(s => s.id_number.toLowerCase() === id_number.toLowerCase())) {
@@ -509,7 +755,7 @@ function handleAddStudent(e) {
   }
 
   const newId = localStudents.length > 0 ? Math.max(...localStudents.map(s => s.id)) + 1 : 1;
-  const newStudent = { id: newId, first_name, id_number, observations: [] };
+  const newStudent = { id: newId, first_name, id_number, section, observations: [] };
 
   if (initialObs !== "") {
     newStudent.observations.push({ date: new Date().toLocaleString(), text: initialObs });
