@@ -316,6 +316,8 @@ textarea {
   justify-content: space-between;
   gap: 0;
   overflow: hidden;
+  flex-shrink: 0;
+  width: 100%;
 }
 
 .student-item:hover {
@@ -473,6 +475,7 @@ textarea {
   border-radius: 10px;
   padding: 1rem;
   animation: fadeIn 0.3s ease-out;
+  flex-shrink: 0;
 }
 
 .observation-date {
@@ -1346,7 +1349,8 @@ textarea {
   flex-shrink: 0;
 }
 
-.student-item:hover .student-item-actions {
+.student-item:hover .student-item-actions,
+.student-item.active .student-item-actions {
   opacity: 1;
 }
 
