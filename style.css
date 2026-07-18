@@ -306,6 +306,7 @@ textarea {
 }
 
 .student-item {
+  height: 52px; /* Constant fixed height */
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
@@ -1334,19 +1335,23 @@ textarea {
 .student-item-info {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   flex: 1;
   min-width: 0;
+  height: 100%;
   cursor: pointer;
-  padding: 0.7rem 0.9rem;
+  padding: 0 0.9rem;
 }
 
 .student-item-actions {
   display: flex;
+  align-items: center;
   gap: 0.3rem;
   padding-right: 0.6rem;
   opacity: 0;
   transition: opacity 0.2s ease;
   flex-shrink: 0;
+  height: 100%;
 }
 
 .student-item:hover .student-item-actions,
